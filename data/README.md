@@ -371,7 +371,37 @@ data/
 
 ---
 
-## 8. 재현 방법
+## 8. 데이터 품질 검증
+
+전처리 결과가 분석에 쓸 만한지 자동 점검합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -m src.preprocess.validate
+```
+
+| 구분 | 검사 항목 | 결과 |
+|---|---|---|
+| **구조** | 패널 키 조합 완전성 (424×7×4) | ✅ |
+| **중복** | 키 중복 · 완전 중복 | ✅ 0건 |
+| **논리** | 생활인구 양수 / 20~30대 ≤ 총인구 / 비중 0~1 / 음수 없음 / 파생변수 재계산 일치 | ✅ 7항목 전부 |
+| **결측** | 컬럼별 결측률이 확인된 사유 범위 내인지 | ✅ |
+| **이상치** | IQR 3배 밖 비율 (**보고만, 제거 안 함**) | 1.3~3.5% |
+
+### 이상치를 제거하지 않는 이유
+
+| 행정동 | 생활인구 |
+|---|---|
+| 서교동(홍대) | 117,158 |
+| 여의동 | 97,017 |
+| 역삼1동 | 94,480 |
+
+**전부 실제 번화가입니다.** 통계적으로는 이상치지만 오류가 아니고, 오히려 **이 극단값이 분석의 핵심**입니다. 잘라내면 "사람 몰리는 곳의 주차 문제"를 볼 수 없습니다.
+
+그래서 표준화도 Min-Max가 아닌 **Z-score**를 씁니다 (Min-Max는 극단값 때문에 나머지 분포가 눌립니다).
+
+---
+
+## 9. 재현 방법
 
 ```powershell
 # 수집
@@ -385,6 +415,14 @@ data/
 .\.venv\Scripts\python.exe -m src.preprocess.geocode_parking --source standard  # 지오코딩
 .\.venv\Scripts\python.exe -m src.preprocess.geocode_parking --source seoul
 .\.venv\Scripts\python.exe -m src.preprocess.build_panel --quarter 20261        # 패널 생성
+.\.venv\Scripts\python.exe -m src.preprocess.validate                          # 품질 검증
+
+# 분석
+.\.venv\Scripts\python.exe -m src.analysis.explore    # 상관·분포
+.\.venv\Scripts\python.exe -m src.analysis.residual   # 회귀 잔차
+
+# 대시보드
+.\.venv\Scripts\streamlit.exe run dashboard/app.py
 
 # 확인
 .\.venv\Scripts\python.exe -c "import pandas as pd; d=pd.read_csv('data/processed/panel.csv'); print(d.head()); print(d.shape)"
