@@ -118,7 +118,9 @@ sel_gu = s1.selectbox("자치구", gu_list,
 dong_names = sorted(d.loc[d["sgg_nm"] == sel_gu, "admi_nm"].unique())
 dong_list = ["전체"] + dong_names
 dong_idx = dong_list.index(default_dong) if default_dong in dong_list else 0
-dong = s2.selectbox(f"행정동 (전체 + {len(dong_names)}개)", dong_list, index=dong_idx)
+dong = s2.selectbox("행정동", dong_list, index=dong_idx,
+                    help=f"{sel_gu}에 행정동 {len(dong_names)}개가 있습니다. "
+                         "'전체'를 고르면 이들의 평균을 봅니다.")
 
 # '전체'면 자치구 안 행정동들의 평균, 아니면 해당 동 하나
 if dong == "전체":
