@@ -27,6 +27,9 @@ reports/figures/*
 ## OS / editor
 .DS_Store
 Thumbs.db
+~$*.docx
+~$*.xlsx
+~$*.pptx
 .vscode/
 .idea/
 
