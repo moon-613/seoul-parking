@@ -1,9 +1,17 @@
-"""서울시 우리마을 생활인구 (행정동) 수집 -> data/raw/living_population_{YYYYMMDD}.csv
+"""서울시 생활인구(행정동 x 시간대) 수집 -> data/raw/living_population/YYYYMMDD.csv
 
-서비스: SPOP_LOCAL_RESD_DONG (일별, 행정동 단위 내국인 생활인구)
+서비스: SPOP_LOCAL_RESD_DONG (일별 / 행정동 / 1시간 단위)
+
+요일 x 시간대 패널을 만들려면 여러 날짜가 필요하다. 기본 28일(4주)로 두어
+7개 요일마다 4개 표본을 확보한다.
+
+주의: OpenAPI는 최근 2개월분만 제공하고 집계 지연도 있다.
+따라서 --end-date 기본값을 과거로 두며, 그보다 오래된 기간이 필요하면
+데이터셋 페이지의 월별 ZIP(LOCAL_PEOPLE_DONG_YYYYMM.zip)을 받아
+data/raw/living_population/ 에 풀어 넣는 방식을 쓴다.
 """
 import argparse
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import pandas as pd
 
@@ -13,25 +21,60 @@ from src.utils.settings import DATA_RAW, get_config
 
 logger = get_logger(__name__)
 
+OUT_DIR = DATA_RAW / "living_population"
+LAG_DAYS = 45          # 집계 지연 여유
+API_WINDOW_DAYS = 60   # OpenAPI 제공 한계(최근 2개월)
 
-def fetch(target_date: str) -> pd.DataFrame:
-    """target_date: 'YYYYMMDD'"""
-    cfg = get_config()["seoul_openapi"]["services"]
+
+def fetch_one_day(target_date: str) -> pd.DataFrame:
+    service = get_config()["seoul_openapi"]["services"]["living_population_dong"]
     client = SeoulOpenApiClient()
-    rows = client.fetch_all(cfg["living_population_dong"], extra_path=[target_date])
-    df = pd.DataFrame(rows)
-    return df
+    rows = client.fetch_all(service, extra_path=[target_date])
+    return pd.DataFrame(rows)
+
+
+def date_range(end_date: str, days: int) -> list[str]:
+    end = datetime.strptime(end_date, "%Y%m%d")
+    return [(end - timedelta(days=i)).strftime("%Y%m%d") for i in range(days)]
 
 
 def main():
+    default_end = (datetime.today() - timedelta(days=LAG_DAYS)).strftime("%Y%m%d")
     parser = argparse.ArgumentParser()
-    parser.add_argument("--date", default=datetime.today().strftime("%Y%m%d"), help="YYYYMMDD")
+    parser.add_argument("--end-date", default=default_end, help="수집 종료일 YYYYMMDD (이 날짜부터 과거로)")
+    parser.add_argument("--days", type=int, default=28, help="수집 일수 (기본 28 = 4주)")
+    parser.add_argument("--overwrite", action="store_true", help="이미 받은 날짜도 다시 수집")
     args = parser.parse_args()
 
-    df = fetch(args.date)
-    out_path = DATA_RAW / f"living_population_{args.date}.csv"
-    df.to_csv(out_path, index=False, encoding="utf-8-sig")
-    logger.info(f"저장 완료: {out_path} ({len(df)}행)")
+    dates = date_range(args.end_date, args.days)
+    oldest = datetime.strptime(dates[-1], "%Y%m%d")
+    if (datetime.today() - oldest).days > API_WINDOW_DAYS:
+        logger.warning(
+            f"요청 구간의 시작일({dates[-1]})이 OpenAPI 제공 범위(최근 {API_WINDOW_DAYS}일)를 벗어납니다. "
+            "빈 응답이 나오면 월별 ZIP 파일 다운로드를 사용하세요."
+        )
+
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    logger.info(f"수집 대상: {dates[-1]} ~ {dates[0]} ({len(dates)}일)")
+
+    saved = skipped = empty = 0
+    for target_date in dates:
+        out_path = OUT_DIR / f"{target_date}.csv"
+        if out_path.exists() and not args.overwrite:
+            skipped += 1
+            continue
+
+        df = fetch_one_day(target_date)
+        if df.empty:
+            logger.warning(f"{target_date}: 데이터 없음 (집계 지연 또는 제공 범위 밖)")
+            empty += 1
+            continue
+
+        df.to_csv(out_path, index=False, encoding="utf-8-sig")
+        logger.info(f"저장: {out_path.name} ({len(df):,}행)")
+        saved += 1
+
+    logger.info(f"완료 — 저장 {saved}일 / 건너뜀 {skipped}일 / 빈응답 {empty}일")
 
 
 if __name__ == "__main__":

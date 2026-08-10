@@ -31,10 +31,16 @@ def get_access_token() -> str:
 def fetch_dong_boundary() -> gpd.GeoDataFrame:
     cfg = get_config()["sgis"]
     token = get_access_token()
+    # low_search=2 여야 행정동(426개)이 나온다. 기본값 1은 자치구(25개)까지만 내려간다.
     resp = requests.get(
         f"{cfg['base_url']}/boundary/hadmarea.geojson",
-        params={"accessToken": token, "cd": SEOUL_ADM_CD, "year": "2024"},
-        timeout=30,
+        params={
+            "accessToken": token,
+            "adm_cd": SEOUL_ADM_CD,
+            "year": cfg["boundary_year"],
+            "low_search": 2,
+        },
+        timeout=90,
     )
     resp.raise_for_status()
     return gpd.read_file(resp.text)
