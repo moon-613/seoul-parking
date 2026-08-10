@@ -76,13 +76,15 @@ def address_variants(addr: str) -> list[str]:
 
     variants = [base]
 
-    # 군더더기 제거: 지번(숫자-숫자) 뒤 텍스트 잘라내기
-    trimmed = re.sub(r"(\d+(?:-\d+)?)\s*\D.*$", r"\1", base)
+    # 지번 앞에는 반드시 공백이 있어야 한다.
+    # \s* 를 쓰면 '인현동2가'의 '2'를 지번으로 오인해 '인현동'으로 잘리므로 \s+ 를 쓴다.
+    # 군더더기 제거: '... 181-0 0' -> '... 181-0'
+    trimmed = re.sub(r"(\s\d+(?:-\d+)?)\s+\D.*$", r"\1", base)
     if trimmed != base:
         variants.append(trimmed)
 
-    # 지번 제거 -> '서울특별시 종로구 와룡동'
-    dong_only = re.sub(r"\s*\d+(?:-\d+)?.*$", "", base).strip()
+    # 지번 제거 -> '서울특별시 용산구 용산동3가'
+    dong_only = re.sub(r"\s+\d+(?:-\d+)?.*$", "", base).strip()
     if dong_only and dong_only != base:
         variants.append(dong_only)
 
