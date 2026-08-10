@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -116,6 +117,36 @@ def apply_filters(df: pd.DataFrame, f: dict, apply_gu: bool = True) -> pd.DataFr
     return d
 
 
+def mark_korean() -> None:
+    """브라우저 자동 번역을 막는다.
+
+    Streamlit은 <html lang="en">으로 내보내는데 내용은 한국어라,
+    크롬이 '영어 페이지'로 보고 한국어로 번역하면서 멀쩡한 문구를 뭉갠다.
+    ('시간대' -> '대처', '넉넉한/빠듯한 동네' -> '제거한/마치 같은 동네')
+
+    st.markdown 안의 <script>는 실행되지 않으므로,
+    iframe에서 부모 문서에 접근하는 components.html을 쓴다.
+    """
+    components.html(
+        """
+        <script>
+        const doc = window.parent.document;
+        doc.documentElement.lang = "ko";
+        doc.documentElement.setAttribute("translate", "no");
+        doc.documentElement.classList.add("notranslate");
+        if (!doc.querySelector('meta[name="google"][content="notranslate"]')) {
+            const m = doc.createElement("meta");
+            m.name = "google";
+            m.content = "notranslate";
+            doc.head.appendChild(m);
+        }
+        </script>
+        """,
+        height=0,
+    )
+
+
 def page_header(title: str, desc: str) -> None:
+    mark_korean()
     st.title(title)
     st.caption(desc)
