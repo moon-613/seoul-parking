@@ -76,47 +76,62 @@ fig.add_trace(go.Scatter(x=TIMESLOTS, y=ref, name="서울 전체",
                          mode="lines+markers", line=dict(color="#B0B0B0", dash="dash")))
 fig.add_trace(go.Scatter(x=TIMESLOTS, y=cur, name=scope,
                          mode="lines+markers", line=dict(color="#D62728", width=3)))
-# 선택 시간대 강조 — 세로 띠 + 큰 점 (띠만으로는 잘 안 보여 점을 함께 찍는다)
+# 선택 시간대는 노란 띠로만 표시한다
 fig.add_vrect(x0=sel_i - 0.45, x1=sel_i + 0.45,
               fillcolor="#FFC107", opacity=0.30, line_width=0, layer="below")
-fig.add_trace(go.Scatter(
-    x=[f["timeslot"]], y=[cur.iloc[sel_i]], name="선택 시간대",
-    mode="markers", marker=dict(size=18, color="rgba(0,0,0,0)",
-                                line=dict(color="#F57C00", width=3)),
-    hovertemplate=f"선택: {f['timeslot']}<br>%{{y:,.0f}}명<extra></extra>",
-))
 fig.update_layout(height=400, margin=dict(t=10, b=10),
                   yaxis_title="평균 생활인구(명)", xaxis_title=None,
                   legend=dict(orientation="h", y=1.12))
 st.plotly_chart(fig, use_container_width=True)
 st.caption(f"**빨간 선**이 선택한 지역, 회색 점선이 서울 전체입니다. "
-           f"**주황 테두리 점과 노란 띠**가 현재 선택한 시간대({f['timeslot']})입니다.")
+           f"**노란 배경**이 현재 선택한 시간대({f['timeslot']})입니다.")
 
 # ── 자치구별 여유도 ─────────────────────────────────────────────
 st.subheader("자치구별 공영주차 여유도")
 
 gu_med = (base.groupby("sgg_nm", observed=True)
           .agg(여유도=("slots_per_1k", "median"), 동수=("admi_nm", "size"))
-          .reset_index().sort_values("여유도"))
-gu_med["선택"] = gu_med["sgg_nm"] == f["gu"]
+          .reset_index())
+gu_med["순위"] = gu_med["여유도"].rank(ascending=False).astype(int)
 
-fig2 = px.bar(gu_med, x="여유도", y="sgg_nm", orientation="h",
+TOP_N = 10
+show_all = st.session_state.get("gu_show_all", False)
+plot_gu = gu_med if show_all else gu_med.nlargest(TOP_N, "여유도")
+plot_gu = plot_gu.sort_values("여유도")   # 가로 막대는 큰 값이 위로 가도록
+
+fig2 = px.bar(plot_gu, x="여유도", y="sgg_nm", orientation="h",
               color="여유도", color_continuous_scale=SCALE_SUPPLY,
-              hover_data={"동수": True, "선택": False}, text="여유도")
+              hover_data={"동수": True, "순위": True}, text="여유도")
 fig2.update_traces(texttemplate="%{text:.1f}", textposition="outside", cliponaxis=False)
-if f["gu"] != "전체":
-    fig2.add_annotation(x=gu_med.loc[gu_med["선택"], "여유도"].iloc[0],
+
+# 선택한 자치구가 화면에 있을 때만 표시 (상위 10 밖이면 아래 캡션으로 안내)
+if f["gu"] != "전체" and f["gu"] in set(plot_gu["sgg_nm"]):
+    fig2.add_annotation(x=plot_gu.loc[plot_gu["sgg_nm"] == f["gu"], "여유도"].iloc[0],
                         y=f["gu"], text="◀ 선택", showarrow=False,
                         xanchor="left", xshift=42,
                         font=dict(size=13, color="#D62728"))
-# 자치구 25개를 다 보여주려면 높이가 충분해야 한다.
-# 380px에서는 Plotly가 축 라벨을 솎아내 13개만 보였다.
-fig2.update_layout(height=max(640, 26 * len(gu_med)), margin=dict(t=10, b=10, r=60),
+
+# 막대 수에 비례해 높이를 잡는다. 부족하면 Plotly가 축 라벨을 솎아낸다.
+fig2.update_layout(height=max(340, 28 * len(plot_gu)), margin=dict(t=10, b=10, r=60),
                    xaxis_title="1,000명당 공영주차면(중앙값)", yaxis_title=None,
                    coloraxis_showscale=False)
 fig2.update_yaxes(tickmode="linear", dtick=1, tickfont=dict(size=12))
 st.plotly_chart(fig2, use_container_width=True)
-st.caption(f"자치구 {len(gu_med)}개 전체. 막대가 길수록 사람 대비 공영주차장이 넉넉합니다.")
+
+cap, btn = st.columns([3, 1])
+with cap:
+    if show_all:
+        st.caption(f"자치구 {len(gu_med)}개 전체. 막대가 길수록 사람 대비 공영주차장이 넉넉합니다.")
+    else:
+        st.caption(f"여유도 상위 {TOP_N}개 자치구 (전체 {len(gu_med)}개). "
+                   "막대가 길수록 사람 대비 공영주차장이 넉넉합니다.")
+    if f["gu"] != "전체" and f["gu"] not in set(plot_gu["sgg_nm"]):
+        rank = int(gu_med.loc[gu_med["sgg_nm"] == f["gu"], "순위"].iloc[0])
+        st.caption(f"선택하신 **{f['gu']}**는 {len(gu_med)}개 중 **{rank}위**라 목록에 없습니다. "
+                   "‘전체 보기’를 눌러 확인하세요.")
+with btn:
+    st.toggle("전체 보기", key="gu_show_all",
+              help=f"상위 {TOP_N}개만 보여줍니다. 켜면 자치구 {len(gu_med)}개를 모두 표시합니다.")
 
 st.divider()
 
