@@ -177,6 +177,7 @@ copy .env.example .env      # API 키 입력
 | 문서 | 내용 |
 |---|---|
 | [data/README.md](./data/README.md) | **데이터 전체 안내** — 출처·컬럼·처리 과정·한계 |
+| [docs/methodology.md](./docs/methodology.md) | **분석 방법론** — 회귀 잔차 계산, R² 해석, 교란 요인 검증 |
 | [PROGRESS.md](./PROGRESS.md) | 일자별 진행 / 트러블슈팅 |
 | [docs/data_links.md](./docs/data_links.md) | 다운로드 링크 모음 |
 
