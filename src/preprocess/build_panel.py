@@ -22,6 +22,7 @@ import pandas as pd
 
 from src.preprocess.dong_code import build_crosswalk, attach_dong_keys
 from src.preprocess.load_commercial import load_all
+from src.utils.holidays import add_day_flags
 from src.utils.logger import get_logger
 from src.utils.settings import DATA_EXTERNAL, DATA_INTERIM, DATA_PROCESSED, DATA_RAW
 from src.utils.timeslot import add_panel_keys
@@ -43,8 +44,14 @@ FOOD_TYPES = [
 CAFE_TYPES = ["커피-음료", "제과점"]
 
 
-def build_living_population() -> pd.DataFrame:
-    """생활인구 56일 -> 행정동 × 요일 × 시간대 평균."""
+def build_living_population(exclude_holidays: bool = True) -> pd.DataFrame:
+    """생활인구 56일 -> 행정동 × 요일 × 시간대 평균.
+
+    평일에 낀 공휴일은 기본적으로 제외한다.
+    '보통의 수요일'을 알고 싶은데 지방선거일(6/3)이 섞이면 평균이 흐려지기 때문이다.
+    실제로 제외 시 변동계수가 수 2.01%→0.19%, 금 2.97%→0.38%로 줄어든다.
+    (토요일에 걸린 현충일 6/6은 어차피 주말이라 그대로 둔다)
+    """
     files = sorted(glob.glob(str(DATA_RAW / "living_population" / "*.csv")))
     if not files:
         raise FileNotFoundError("생활인구 파일이 없습니다. fetch_living_population.py를 먼저 실행하세요.")
@@ -59,6 +66,15 @@ def build_living_population() -> pd.DataFrame:
         frames.append(df)
     lp = pd.concat(frames, ignore_index=True)
     logger.info(f"생활인구 {len(files)}일 / {len(lp):,}행 (심야 제외)")
+
+    if exclude_holidays:
+        lp = add_day_flags(lp, "STDR_DE_ID")
+        dropped = lp[lp.day_type == "공휴일"]
+        if not dropped.empty:
+            names = sorted(dropped.holiday_nm.dropna().unique())
+            days = dropped.STDR_DE_ID.nunique()
+            logger.info(f"평일 공휴일 {days}일 제외: {', '.join(names)}")
+        lp = lp[lp.day_type != "공휴일"].drop(columns=["day_type", "is_holiday", "holiday_nm"])
 
     lp = attach_dong_keys(lp, cw)
     lp["young_pop"] = lp[YOUNG_COLS].sum(axis=1)
@@ -199,9 +215,11 @@ def build_commercial(quarter: str) -> pd.DataFrame:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--quarter", default="20261", help="상권분석 기준 분기 (기본 20261)")
+    parser.add_argument("--include-holidays", action="store_true",
+                        help="평일에 낀 공휴일도 요일 평균에 포함 (기본은 제외)")
     args = parser.parse_args()
 
-    panel = build_living_population()
+    panel = build_living_population(exclude_holidays=not args.include_holidays)
     panel = panel.merge(build_parking(), on="adm_cd", how="left")
     panel = panel.merge(build_commercial(args.quarter), on="admi_cd", how="left")
 
