@@ -73,12 +73,15 @@ best_k = max(sil, key=sil.get)
 k = best_k if auto else c1.slider("군집 수 k", 2, 7, best_k)
 
 with c2:
+    st.markdown(f"**군집 수별 실루엣 계수** — 최적 k = {best_k}")
     sil_df = pd.DataFrame({"k": list(sil), "실루엣계수": list(sil.values())})
     figs = px.line(sil_df, x="k", y="실루엣계수", markers=True)
-    figs.add_vline(x=k, line_dash="dash", line_color="#D62728")
-    figs.update_layout(height=200, margin=dict(t=10, b=10),
-                       title=f"군집 수별 실루엣 계수 (최적 k={best_k})")
+    figs.add_vline(x=k, line_dash="dash", line_color="#D62728",
+                   annotation_text=f"선택 k={k}", annotation_position="top")
+    figs.update_layout(height=230, margin=dict(t=30, b=10, l=10, r=10))
+    figs.update_xaxes(tickmode="linear", dtick=1)
     st.plotly_chart(figs, use_container_width=True)
+    st.caption("값이 클수록 군집이 잘 나뉜 것입니다.")
 
 coords, labels, pca, _ = run_cluster(X, k)
 use["PC1"], use["PC2"] = coords[:, 0], coords[:, 1]
