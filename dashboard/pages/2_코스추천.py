@@ -97,9 +97,27 @@ st.divider()
 # ── 동네별 최적 시간대 ─────────────────────────────────────────
 st.subheader("⏰ 이 동네, 언제 가면 가장 여유로울까")
 
-dong_list = sorted(d["admi_nm"].unique())
-default = rec.nlargest(1, "종합점수").admi_nm.iloc[0] if not rec.empty else dong_list[0]
-dong = st.selectbox("행정동 선택", dong_list, index=dong_list.index(default))
+# 자치구를 먼저 고르고 그 안의 행정동을 고른다 (424개를 한 줄에 늘어놓지 않기 위해)
+if not rec.empty:
+    top = rec.nlargest(1, "종합점수").iloc[0]
+    default_gu, default_dong = top.sgg_nm, top.admi_nm
+else:
+    first = d.sort_values(["sgg_nm", "admi_nm"]).iloc[0]
+    default_gu, default_dong = first.sgg_nm, first.admi_nm
+
+# 사이드바에서 자치구를 골랐다면 그것을 우선한다
+if f["gu"] != "전체":
+    default_gu = f["gu"]
+
+gu_list = sorted(d["sgg_nm"].dropna().unique())
+s1, s2 = st.columns(2)
+
+sel_gu = s1.selectbox("자치구", gu_list,
+                      index=gu_list.index(default_gu) if default_gu in gu_list else 0)
+
+dong_list = sorted(d.loc[d["sgg_nm"] == sel_gu, "admi_nm"].unique())
+dong_idx = dong_list.index(default_dong) if default_dong in dong_list else 0
+dong = s2.selectbox(f"행정동 ({len(dong_list)}개)", dong_list, index=dong_idx)
 
 prof = df[df["admi_nm"] == dong].pivot_table(
     index="weekday", columns="timeslot", values="slots_per_1k", observed=True
@@ -120,5 +138,5 @@ b1.success(f"**가장 여유**: {best[0]}요일 {TIMESLOT_LABEL[best[1]]} — {p
 b2.error(f"**가장 빠듯**: {worst[0]}요일 {TIMESLOT_LABEL[worst[1]]} — {prof.loc[worst]:.1f}")
 
 diff = (prof.loc[best] / prof.loc[worst] - 1) * 100
-st.info(f"**{dong}**은 가장 빠듯한 때보다 가장 여유로운 때가 **{diff:.0f}% 넉넉**합니다. "
+st.info(f"**{sel_gu} {dong}**은 가장 빠듯한 때보다 가장 여유로운 때가 **{diff:.0f}% 넉넉**합니다. "
         f"같은 주차장인데 사람 수가 달라서 생기는 차이입니다.", icon="💡")
