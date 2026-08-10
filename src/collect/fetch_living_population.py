@@ -22,8 +22,14 @@ from src.utils.settings import DATA_RAW, get_config
 logger = get_logger(__name__)
 
 OUT_DIR = DATA_RAW / "living_population"
-LAG_DAYS = 45          # 집계 지연 여유
-API_WINDOW_DAYS = 60   # OpenAPI 제공 한계(최근 2개월)
+
+# 2026-08-10 실측한 제공 구간:
+#   7일전  -> 0건 (집계 지연)
+#   14~70일전 -> 정상 (10,176행/일)
+#   80일전 이상 -> 0건 (제공 범위 밖)
+# 즉 가용 폭은 약 57일. 기본값은 이 구간 안에 들어오도록 잡는다.
+LAG_DAYS = 14          # 집계 지연 여유 (이보다 최근은 빈 응답)
+API_WINDOW_DAYS = 70   # 이보다 과거는 OpenAPI 미제공 -> 월별 ZIP 사용
 
 
 def fetch_one_day(target_date: str) -> pd.DataFrame:
