@@ -72,8 +72,11 @@ ref = seoul_line.groupby("timeslot", observed=True)["living_pop"].mean().reindex
 sel_i = TIMESLOTS.index(f["timeslot"])
 
 fig = go.Figure()
-fig.add_trace(go.Scatter(x=TIMESLOTS, y=ref, name="서울 전체",
-                         mode="lines+markers", line=dict(color="#B0B0B0", dash="dash")))
+# 자치구가 '전체'면 두 선의 값이 같아 빨간 선이 회색 점선을 덮는다.
+# 비교 기준선은 특정 자치구를 골랐을 때만 그린다.
+if f["gu"] != "전체":
+    fig.add_trace(go.Scatter(x=TIMESLOTS, y=ref, name="서울 전체",
+                             mode="lines+markers", line=dict(color="#B0B0B0", dash="dash")))
 fig.add_trace(go.Scatter(x=TIMESLOTS, y=cur, name=scope,
                          mode="lines+markers", line=dict(color="#D62728", width=3)))
 # 선택 시간대는 노란 띠로만 표시한다
@@ -83,8 +86,13 @@ fig.update_layout(height=400, margin=dict(t=10, b=10),
                   yaxis_title="평균 생활인구(명)", xaxis_title=None,
                   legend=dict(orientation="h", y=1.12))
 st.plotly_chart(fig, use_container_width=True)
-st.caption(f"**빨간 선**이 선택한 지역, 회색 점선이 서울 전체입니다. "
-           f"**노란 배경**이 현재 선택한 시간대({f['timeslot']})입니다.")
+
+if f["gu"] == "전체":
+    st.caption(f"**빨간 선**이 서울 전체 평균입니다. **노란 배경**이 선택한 시간대({f['timeslot']})입니다. "
+               "사이드바에서 자치구를 고르면 서울 평균과 비교하는 회색 점선이 함께 나옵니다.")
+else:
+    st.caption(f"**빨간 선**이 {f['gu']}, **회색 점선**이 서울 전체입니다. "
+               f"**노란 배경**이 선택한 시간대({f['timeslot']})입니다.")
 
 # ── 자치구별 여유도 ─────────────────────────────────────────────
 st.subheader("자치구별 공영주차 여유도")
