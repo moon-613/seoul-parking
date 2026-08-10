@@ -1,22 +1,28 @@
-"""주차장 주소를 지오코딩해 좌표·행정동을 채운다 -> data/interim/parking_geocoded.csv
+"""주차장 주소를 지오코딩해 행정동을 배정한다 -> data/interim/parking_geocoded.csv
 
-배경
-----
-서울 공영주차장 API(GetParkInfo)는 2,189건 중 **733건(33.5%)의 LAT/LOT가 0.0**이다.
-좌표만으로 공간조인하면 61,035면 중 16,463면(27%)만 남아 공급 변수가 무너진다.
+왜 필요한가
+----------
+주차장 데이터에는 행정동 정보가 없다. 분석 단위가 행정동이므로 주차장마다
+소속 행정동을 정해야(=배정) 동별 주차면수를 합산할 수 있다.
 
-해결
-----
-SGIS 지오코딩 API(`addr/geocodewgs84.json`)로 주소를 변환한다.
-카카오 로컬 API도 검토했으나 앱에서 OPEN_MAP_AND_LOCAL 서비스 활성화가 필요해 403이 났고,
-SGIS는 좌표뿐 아니라 **행정동코드(adm_cd)를 직접 반환**해 공간조인 없이 바로 붙일 수 있다.
+왜 지오코딩인가
+--------------
+좌표 공간조인은 좌표 결측 때문에 불안정하다.
+  전국주차장 표준데이터(주 사용) : 856건 중 49건(5.7%) 결측
+  서울시 공영주차장 API(보조)    : 2,189건 중 733건(33.5%) 결측
+SGIS 지오코딩(`addr/geocodewgs84.json`)은 좌표뿐 아니라 **행정동코드(adm_cd)를 직접 반환**해
+공간조인 없이 배정이 끝나고, 경계 파일의 adm_cd와 100% 일치한다.
 
   응답 예: adm_cd=11040540, adm_nm=마장동, x=127.035104, y=37.569968
 
-주소 형식
---------
-원본 ADDR은 "성동구 마장동 463-2" 형태라 시도명을 붙여 조회한다.
-부번이 0인 "385-0"은 "385"로 정리해야 매칭률이 오른다.
+카카오 로컬 API도 검토했으나 앱의 OPEN_MAP_AND_LOCAL 서비스가 비활성이라 403이 났다.
+
+데이터 소스
+----------
+--source standard (기본) : data/raw/parking_standard.csv  (전국 표준데이터의 서울분)
+--source seoul           : data/raw/parking_seoul.csv     (서울시 공영주차장 API)
+
+표준데이터를 주로 쓰는 이유는 거주지우선주차지역이 제외되어 방문객 주차 분석에 맞기 때문이다.
 """
 from __future__ import annotations
 
@@ -36,6 +42,22 @@ logger = get_logger(__name__)
 SIDO = "서울특별시"
 REQUEST_INTERVAL_SEC = 0.05
 
+# 소스별 컬럼 매핑: (입력파일, 주소컬럼 우선순위, 주차면수, 주차장명)
+SOURCES = {
+    "standard": {
+        "file": "parking_standard.csv",
+        "addr_cols": ["lnmadr", "rdnmadr"],
+        "slots": "prkcmprt",
+        "name": "prkplceNm",
+    },
+    "seoul": {
+        "file": "parking_seoul.csv",
+        "addr_cols": ["ADDR"],
+        "slots": "TPKCT",
+        "name": "PKLT_NM",
+    },
+}
+
 
 def get_access_token() -> str:
     base = get_config()["sgis"]["base_url"]
@@ -52,10 +74,22 @@ def get_access_token() -> str:
 
 
 def normalize_address(addr: str) -> str:
-    """'영등포구 당산동3가 385-0' -> '서울특별시 영등포구 당산동3가 385'"""
+    """주소 표기를 SGIS가 인식하는 형태로 정리.
+
+    '영등포구 당산동3가 385-0'      -> '서울특별시 영등포구 당산동3가 385'
+    '은평구 신사동산55번지5호'       -> '서울특별시 은평구 신사동 산55-5'
+    '노원구 상계6·7동770-2'         -> '서울특별시 노원구 상계6.7동 770-2'
+    """
     if pd.isna(addr):
         return ""
     s = str(addr).strip()
+
+    s = re.sub(r"[·ㆍ]", ".", s)                       # 가운뎃점 통일
+    s = re.sub(r"(\d+)번지\s*(\d+)호", r"\1-\2", s)     # 55번지5호 -> 55-5
+    s = re.sub(r"(\d+)번지", r"\1", s)                 # 55번지 -> 55
+    s = re.sub(r"(동|가|리)(산?\d)", r"\1 \2", s)       # 신사동산55 -> 신사동 산55
+    s = re.sub(r"\s+", " ", s).strip()
+
     if s.endswith("-0"):
         s = s[:-2]
     if not s.startswith(SIDO):
@@ -113,9 +147,9 @@ def _geocode_one(address: str, token: str) -> dict | None:
 GEO_COLS = ("geo_adm_cd", "geo_adm_nm", "geo_sgg_nm", "geo_x", "geo_y", "geo_level")
 
 
-def _lookup(addr: str, token: str) -> dict | None:
+def _lookup(queries: list[str], token: str) -> dict | None:
     """주소 후보를 정밀 -> 개략 순으로 시도."""
-    for level, query in enumerate(address_variants(addr)):
+    for level, query in enumerate(queries):
         hit = _geocode_one(query, token)
         if hit:
             return {
@@ -130,7 +164,24 @@ def _lookup(addr: str, token: str) -> dict | None:
     return None
 
 
-def geocode_parking(df: pd.DataFrame, only_missing: bool = False) -> pd.DataFrame:
+def _all_variants(row: pd.Series, addr_cols: list[str]) -> list[str]:
+    """지번·도로명 등 가용한 모든 주소 컬럼의 후보를 순서대로 모은다.
+
+    지번이 특이 형식이라 실패해도 도로명으로 살아나는 경우가 있어 둘 다 시도한다.
+    """
+    out: list[str] = []
+    for col in addr_cols:
+        val = row.get(col)
+        if pd.notna(val) and str(val).strip():
+            for v in address_variants(str(val)):
+                if v not in out:
+                    out.append(v)
+    return out
+
+
+def geocode_parking(
+    df: pd.DataFrame, addr_cols: list[str], only_missing: bool = False
+) -> pd.DataFrame:
     """주차장 DataFrame에 geo_* 컬럼을 추가.
 
     only_missing=True 면 geo_adm_cd 가 비어있는 행만 다시 조회한다.
@@ -148,7 +199,7 @@ def geocode_parking(df: pd.DataFrame, only_missing: bool = False) -> pd.DataFram
     logger.info(f"조회 대상 {total:,}건")
 
     for i, idx in enumerate(targets, start=1):
-        hit = _lookup(out.at[idx, "ADDR"], token)
+        hit = _lookup(_all_variants(out.loc[idx], addr_cols), token)
         if hit:
             for col, val in hit.items():
                 out.at[idx, col] = val
@@ -171,6 +222,7 @@ def geocode_parking(df: pd.DataFrame, only_missing: bool = False) -> pd.DataFram
 
 def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument("--source", choices=list(SOURCES), default="standard")
     parser.add_argument(
         "--retry-failed",
         action="store_true",
@@ -178,23 +230,25 @@ def main():
     )
     args = parser.parse_args()
 
-    dest = DATA_INTERIM / "parking_geocoded.csv"
+    cfg = SOURCES[args.source]
+    dest = DATA_INTERIM / f"parking_geocoded_{args.source}.csv"
 
     if args.retry_failed and dest.exists():
         df = pd.read_csv(dest, dtype={"geo_adm_cd": str})
         logger.info(f"기존 결과 이어하기: {dest.name} ({len(df):,}건)")
-        out = geocode_parking(df, only_missing=True)
+        out = geocode_parking(df, cfg["addr_cols"], only_missing=True)
     else:
-        src = DATA_RAW / "parking_seoul.csv"
+        src = DATA_RAW / cfg["file"]
         df = pd.read_csv(src)
-        logger.info(f"입력: {src.name} ({len(df):,}건)")
-        out = geocode_parking(df)
+        logger.info(f"입력: {src.name} ({len(df):,}건) / source={args.source}")
+        out = geocode_parking(df, cfg["addr_cols"])
 
     DATA_INTERIM.mkdir(parents=True, exist_ok=True)
     out.to_csv(dest, index=False, encoding="utf-8-sig")
 
-    slots = pd.to_numeric(out.loc[out["geo_adm_cd"].notna(), "TPKCT"], errors="coerce").sum()
-    total_slots = pd.to_numeric(out["TPKCT"], errors="coerce").sum()
+    slot_col = cfg["slots"]
+    slots = pd.to_numeric(out.loc[out["geo_adm_cd"].notna(), slot_col], errors="coerce").sum()
+    total_slots = pd.to_numeric(out[slot_col], errors="coerce").sum()
     logger.info(
         f"저장 완료: {dest} — 행정동 확정 주차면 {slots:,.0f}/{total_slots:,.0f} "
         f"({slots/total_slots*100:.1f}%)"

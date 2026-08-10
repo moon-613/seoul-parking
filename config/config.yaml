@@ -24,11 +24,14 @@ seoul_openapi:
   base_url: "http://openapi.seoul.go.kr:8088"
   services:
     living_population_dong: "SPOP_LOCAL_RESD_DONG"   # 생활인구 (행정동 x 시간대)
-    parking_lot_public: "GetParkInfo"                 # 서울시 공영주차장 (2,189개 / 61,035면, 민영 미포함)
+    # 보조 데이터. 거주자우선주차구획이 다수 포함되어 방문객 주차 분석에는 부적합해
+    # 주 데이터로 쓰지 않는다 (예: 서교동 6면 vs 표준데이터 152면).
+    parking_lot_public: "GetParkInfo"
   page_size: 1000
 
-# 공공데이터포털 전국주차장정보 표준데이터 (.env: DATA_GO_KR_KEY)
-# 민영주차장을 포함하는 유일한 경로. 2026-08-10 기준 서버 장애(504) 확인됨 -> 복구 후 재시도 필요.
+# 공공데이터포털 전국주차장정보 표준데이터 (.env: DATA_GO_KR_KEY) — 주 주차장 데이터
+# 수집 범위: "지자체가 관리하는 공영/민영 주차장(노상·노외·부설), 거주지우선주차지역 제외"
+# 거주지우선이 제외되어 방문객 주차 분석에 적합하다.
 data_go_kr:
   parking_api: "https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api"
   page_size: 1000

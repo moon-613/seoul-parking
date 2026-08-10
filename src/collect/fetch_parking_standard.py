@@ -37,6 +37,20 @@ def _request(page: int, rows: int, timeout: int) -> dict:
     return resp.json()
 
 
+def _items(payload: dict) -> list[dict]:
+    """응답에서 레코드 목록을 꺼낸다.
+
+    실제 구조: {"header": {...}, "body": {"items": {"item": [...]}, "totalCount": N}}
+    """
+    body = payload.get("body") or {}
+    items = body.get("items") or {}
+    if isinstance(items, dict):
+        rows = items.get("item") or []
+    else:
+        rows = items
+    return rows if isinstance(rows, list) else [rows]
+
+
 def probe(timeout: int = 90) -> bool:
     """API가 살아있는지 1건만 요청해 확인."""
     try:
@@ -48,27 +62,27 @@ def probe(timeout: int = 90) -> bool:
         logger.error(f"요청 실패: {e}")
         return False
 
-    header = payload.get("response", {}).get("header", {})
-    total = payload.get("response", {}).get("body", {}).get("totalCount")
-    logger.info(f"정상 응답 — resultCode={header.get('resultCode')}, totalCount={total}")
-    return True
+    header = payload.get("header", {})
+    total = (payload.get("body") or {}).get("totalCount")
+    code = header.get("resultCode")
+    logger.info(f"응답 — resultCode={code} ({header.get('resultMsg')}), totalCount={total}")
+    return code == "00"
 
 
-def fetch_all(timeout: int = 90, sleep_sec: float = 0.3) -> pd.DataFrame:
+def fetch_all(timeout: int = 90, sleep_sec: float = 0.2) -> pd.DataFrame:
     cfg = get_config()["data_go_kr"]
     rows_per_page = cfg["page_size"]
 
     first = _request(1, rows_per_page, timeout)
-    body = first["response"]["body"]
-    total = int(body["totalCount"])
+    total = int(first["body"]["totalCount"])
     total_pages = (total + rows_per_page - 1) // rows_per_page
-    logger.info(f"전체 {total:,}건 / {total_pages}페이지 수집 시작")
+    logger.info(f"전국 {total:,}건 / {total_pages}페이지 수집 시작")
 
-    records = list(body.get("items", []))
+    records = _items(first)
     for page in range(2, total_pages + 1):
-        payload = _request(page, rows_per_page, timeout)
-        records.extend(payload["response"]["body"].get("items", []))
-        logger.info(f"{page}/{total_pages} 페이지 (누적 {len(records):,}건)")
+        records.extend(_items(_request(page, rows_per_page, timeout)))
+        if page % 5 == 0 or page == total_pages:
+            logger.info(f"{page}/{total_pages} 페이지 (누적 {len(records):,}건)")
         time.sleep(sleep_sec)
 
     return pd.DataFrame(records)
@@ -102,7 +116,13 @@ def main():
     df = filter_seoul(fetch_all(args.timeout))
     out_path = DATA_RAW / "parking_standard.csv"
     df.to_csv(out_path, index=False, encoding="utf-8-sig")
-    logger.info(f"저장 완료: {out_path} (서울 {len(df):,}건)")
+
+    slots = pd.to_numeric(df.get("prkcmprt"), errors="coerce").sum()
+    logger.info(f"저장 완료: {out_path} (서울 {len(df):,}건 / {slots:,.0f}면)")
+    if "prkplceSe" in df.columns:
+        for k, v in df["prkplceSe"].value_counts().items():
+            s = pd.to_numeric(df.loc[df["prkplceSe"] == k, "prkcmprt"], errors="coerce").sum()
+            logger.info(f"  {k}: {v:,}건 / {s:,.0f}면")
 
 
 if __name__ == "__main__":
