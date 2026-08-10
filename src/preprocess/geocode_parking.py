@@ -112,13 +112,14 @@ def address_variants(addr: str) -> list[str]:
 
     # 지번 앞에는 반드시 공백이 있어야 한다.
     # \s* 를 쓰면 '인현동2가'의 '2'를 지번으로 오인해 '인현동'으로 잘리므로 \s+ 를 쓴다.
+    # '산10-84'처럼 산 지번도 있어 산? 을 허용한다.
     # 군더더기 제거: '... 181-0 0' -> '... 181-0'
-    trimmed = re.sub(r"(\s\d+(?:-\d+)?)\s+\D.*$", r"\1", base)
+    trimmed = re.sub(r"(\s산?\d+(?:-\d+)?)\s+\D.*$", r"\1", base)
     if trimmed != base:
         variants.append(trimmed)
 
     # 지번 제거 -> '서울특별시 용산구 용산동3가'
-    dong_only = re.sub(r"\s+\d+(?:-\d+)?.*$", "", base).strip()
+    dong_only = re.sub(r"\s+산?\d+(?:-\d+)?.*$", "", base).strip()
     if dong_only and dong_only != base:
         variants.append(dong_only)
 
@@ -172,8 +173,13 @@ def _all_variants(row: pd.Series, addr_cols: list[str]) -> list[str]:
     out: list[str] = []
     for col in addr_cols:
         val = row.get(col)
-        if pd.notna(val) and str(val).strip():
-            for v in address_variants(str(val)):
+        if pd.isna(val) or not str(val).strip():
+            continue
+        # 여러 주소가 '+'로 이어진 경우가 있다 (예: '선릉로69길+선릉로 63길+도곡로57길')
+        for part in str(val).split("+"):
+            if not part.strip():
+                continue
+            for v in address_variants(part):
                 if v not in out:
                     out.append(v)
     return out
