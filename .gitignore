@@ -1,0 +1,34 @@
+## Environment / secrets
+.env
+*.key
+
+## Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.venv/
+venv/
+
+## Data (raw/intermediate/processed data is regenerated via src/collect, not versioned)
+data/raw/*
+data/interim/*
+data/processed/*
+data/external/*
+!data/raw/.gitkeep
+!data/interim/.gitkeep
+!data/processed/.gitkeep
+!data/external/.gitkeep
+
+## Reports / outputs
+reports/figures/*
+!reports/figures/.gitkeep
+
+## OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+## Streamlit
+.streamlit/secrets.toml
