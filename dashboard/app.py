@@ -1,61 +1,133 @@
-"""서울시 행정동별 주차수급 불균형 대시보드 (홈)
+"""탐색 페이지 — 선택한 요일·시간대의 공영주차 여유도와 혼잡도
 
 실행: streamlit run dashboard/app.py
 """
-import sys
-from pathlib import Path
-
-import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
-sys.path.append(str(Path(__file__).resolve().parents[1]))
-from src.utils.settings import DATA_PROCESSED  # noqa: E402
+from common import (
+    SCALE_SUPPLY, TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS,
+    apply_filters, page_header, require_data, sidebar_filters,
+)
 
-st.set_page_config(page_title="서울시 주차수급 불균형 대시보드", page_icon="🅿️", layout="wide")
+st.set_page_config(page_title="서울 나들이 주차 대시보드", page_icon="🅿️", layout="wide")
 
+df = require_data()
+f = sidebar_filters(df)
+d = apply_filters(df, f)
 
-@st.cache_data
-def load_data() -> pd.DataFrame:
-    path = DATA_PROCESSED / "imbalance_index.csv"
-    if not path.exists():
-        return pd.DataFrame()
-    return pd.read_csv(path)
+page_header(
+    "🅿️ 어디로 언제 갈까 — 서울 공영주차 여유도",
+    "생활인구(방문객 포함 체류인구) 대비 공영주차 공급을 요일·시간대별로 봅니다. "
+    "※ 실시간 빈자리가 아니라 8주 평균 패턴입니다.",
+)
 
+if d.empty:
+    st.warning("선택한 조건에 해당하는 행정동이 없습니다. 조건을 바꿔보세요.")
+    st.stop()
 
-def main():
-    st.title("🅿️ 서울시 생활인구 기반 주차수급 불균형 대시보드")
-    st.caption("행정동별 주차수요(생활인구 기반) 대비 주차공급(주차면수) 불균형 진단 및 취약지역 도출")
+# ── 비교 기준: 같은 시점의 서울 전체 ───────────────────────────────
+base = apply_filters(df, f, apply_gu=False)
 
-    df = load_data()
-    if df.empty:
-        st.warning(
-            "분석 데이터가 없습니다. src/collect -> src/preprocess -> src/analysis 파이프라인을 먼저 실행하세요."
-        )
-        st.code(
-            "python -m src.collect.fetch_living_population\n"
-            "python -m src.collect.fetch_parking_lots\n"
-            "python -m src.collect.fetch_registered_vehicles\n"
-            "python -m src.collect.fetch_dong_boundary\n"
-            "python -m src.preprocess.clean_merge\n"
-            "python -m src.analysis.imbalance_index"
-        )
-        return
+pop_sel, pop_all = d["living_pop"].mean(), base["living_pop"].mean()
+slot_sel, slot_all = d["slots_per_1k"].median(), base["slots_per_1k"].median()
+young_sel, young_all = d["young_ratio"].mean(), base["young_ratio"].mean()
 
-    col1, col2, col3 = st.columns(3)
-    col1.metric("분석 대상 행정동 수", f"{len(df):,}개")
-    col2.metric("취약지역 수", f"{int(df['is_vulnerable'].sum()):,}개")
-    col3.metric("평균 불균형 지수", f"{df['imbalance_ratio'].mean():.2f}")
+scope = "서울 전체" if f["gu"] == "전체" else f["gu"]
+st.markdown(f"#### {f['weekday']}요일 · {TIMESLOT_LABEL[f['timeslot']]} · {scope}")
 
-    st.subheader("행정동별 불균형 지수 상위 20개")
-    top20 = df.sort_values("imbalance_ratio", ascending=False).head(20)
-    fig = px.bar(top20, x="imbalance_ratio", y="adm_dong_nm", orientation="h")
-    fig.update_layout(yaxis={"categoryorder": "total ascending"})
+c1, c2, c3, c4 = st.columns(4)
+c1.metric("대상 행정동", f"{len(d):,}개",
+          delta=None if f["gu"] == "전체" else f"서울 {len(base):,}개 중")
+c2.metric("평균 생활인구", f"{pop_sel:,.0f}명",
+          delta=f"{pop_sel - pop_all:+,.0f}명" if f["gu"] != "전체" else None,
+          help="선택 조건 행정동의 평균 체류인구")
+c3.metric("공영주차 여유도", f"{slot_sel:.1f}",
+          delta=f"{slot_sel - slot_all:+.1f}" if f["gu"] != "전체" else None,
+          help="1,000명당 공영주차면수(중앙값). 높을수록 여유")
+c4.metric("20~30대 비중", f"{young_sel*100:.1f}%",
+          delta=f"{(young_sel - young_all)*100:+.1f}%p" if f["gu"] != "전체" else None)
+
+if f["gu"] == "전체":
+    st.caption("자치구를 선택하면 서울 전체 대비 증감이 표시됩니다.")
+
+st.divider()
+
+# ── 그래프 2종 ──────────────────────────────────────────────────
+g1, g2 = st.columns(2)
+
+with g1:
+    st.subheader("시간대별 생활인구")
+    line_src = df[df["weekday"] == f["weekday"]]
+    if f["gu"] != "전체":
+        line_src = line_src[line_src["sgg_nm"] == f["gu"]]
+    if f["exclude_zero"]:
+        line_src = line_src[line_src["has_parking"]]
+
+    seoul_line = df[df["weekday"] == f["weekday"]]
+    if f["exclude_zero"]:
+        seoul_line = seoul_line[seoul_line["has_parking"]]
+
+    cur = line_src.groupby("timeslot", observed=True)["living_pop"].mean().reindex(TIMESLOTS)
+    ref = seoul_line.groupby("timeslot", observed=True)["living_pop"].mean().reindex(TIMESLOTS)
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=TIMESLOTS, y=ref, name="서울 전체",
+                             mode="lines+markers", line=dict(color="#B0B0B0", dash="dash")))
+    fig.add_trace(go.Scatter(x=TIMESLOTS, y=cur, name=scope,
+                             mode="lines+markers", line=dict(color="#D62728", width=3)))
+    fig.add_vrect(x0=TIMESLOTS.index(f["timeslot"]) - 0.4,
+                  x1=TIMESLOTS.index(f["timeslot"]) + 0.4,
+                  fillcolor="#FFD700", opacity=0.18, line_width=0)
+    fig.update_layout(height=380, margin=dict(t=10, b=10),
+                      yaxis_title="평균 생활인구(명)", xaxis_title=None,
+                      legend=dict(orientation="h", y=1.12))
     st.plotly_chart(fig, use_container_width=True)
+    st.caption(f"노란 구간이 현재 선택한 시간대입니다. {f['weekday']}요일 기준.")
 
-    st.subheader("원본 데이터")
-    st.dataframe(df, use_container_width=True)
+with g2:
+    st.subheader("자치구별 공영주차 여유도")
+    gu_med = (base.groupby("sgg_nm", observed=True)
+              .agg(여유도=("slots_per_1k", "median"), 동수=("admi_nm", "size"))
+              .reset_index().sort_values("여유도"))
+    gu_med["선택"] = gu_med["sgg_nm"] == f["gu"]
 
+    fig2 = px.bar(gu_med, x="여유도", y="sgg_nm", orientation="h",
+                  color="여유도", color_continuous_scale=SCALE_SUPPLY,
+                  hover_data={"동수": True, "선택": False})
+    if f["gu"] != "전체":
+        fig2.add_annotation(x=gu_med.loc[gu_med["선택"], "여유도"].iloc[0],
+                            y=f["gu"], text="◀ 선택", showarrow=False,
+                            xanchor="left", font=dict(size=12, color="#D62728"))
+    fig2.update_layout(height=380, margin=dict(t=10, b=10),
+                       xaxis_title="1,000명당 공영주차면(중앙값)", yaxis_title=None,
+                       coloraxis_showscale=False)
+    st.plotly_chart(fig2, use_container_width=True)
+    st.caption("막대가 길수록 사람 대비 공영주차장이 넉넉합니다.")
 
-if __name__ == "__main__":
-    main()
+st.divider()
+
+# ── 동네 순위 ───────────────────────────────────────────────────
+st.subheader("이 조건에서 주차가 넉넉한 / 빠듯한 동네")
+
+cols = ["sgg_nm", "admi_nm", "living_pop", "slots_per_1k", "parking_slots", "store_food"]
+names = {"sgg_nm": "자치구", "admi_nm": "행정동", "living_pop": "생활인구",
+         "slots_per_1k": "천명당주차면", "parking_slots": "공영주차면", "store_food": "음식점수"}
+fmt = {"생활인구": "{:,.0f}", "천명당주차면": "{:.1f}", "공영주차면": "{:,.0f}", "음식점수": "{:,.0f}"}
+
+t1, t2 = st.columns(2)
+with t1:
+    st.markdown("**🟢 여유 TOP 10**")
+    st.dataframe(d.nlargest(10, "slots_per_1k")[cols].rename(columns=names)
+                 .style.format(fmt), use_container_width=True, hide_index=True)
+with t2:
+    st.markdown("**🔴 빠듯 TOP 10**")
+    st.dataframe(d.nsmallest(10, "slots_per_1k")[cols].rename(columns=names)
+                 .style.format(fmt), use_container_width=True, hide_index=True)
+
+st.info(
+    "**천명당주차면**은 그 시간대에 그 동네에 있는 사람 1,000명당 공영주차면 수입니다. "
+    "주차면은 고정이고 사람 수가 시간에 따라 변하므로, **같은 동네도 시간대에 따라 값이 달라집니다.**",
+    icon="💡",
+)
