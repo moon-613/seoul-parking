@@ -115,13 +115,29 @@ s1, s2 = st.columns(2)
 sel_gu = s1.selectbox("자치구", gu_list,
                       index=gu_list.index(default_gu) if default_gu in gu_list else 0)
 
-dong_list = sorted(d.loc[d["sgg_nm"] == sel_gu, "admi_nm"].unique())
+dong_names = sorted(d.loc[d["sgg_nm"] == sel_gu, "admi_nm"].unique())
+dong_list = ["전체"] + dong_names
 dong_idx = dong_list.index(default_dong) if default_dong in dong_list else 0
-dong = s2.selectbox(f"행정동 ({len(dong_list)}개)", dong_list, index=dong_idx)
+dong = s2.selectbox(f"행정동 (전체 + {len(dong_names)}개)", dong_list, index=dong_idx)
 
-prof = df[df["admi_nm"] == dong].pivot_table(
+# '전체'면 자치구 안 행정동들의 평균, 아니면 해당 동 하나
+if dong == "전체":
+    src = df[df["sgg_nm"] == sel_gu]
+    label = f"{sel_gu} 전체"
+else:
+    src = df[(df["sgg_nm"] == sel_gu) & (df["admi_nm"] == dong)]
+    label = f"{sel_gu} {dong}"
+
+if f["exclude_zero"]:
+    src = src[src["has_parking"]]
+
+prof = src.pivot_table(
     index="weekday", columns="timeslot", values="slots_per_1k", observed=True
 ).reindex(index=WEEKDAYS, columns=TIMESLOTS)
+
+if prof.isna().all().all():
+    st.warning(f"{label}에 표시할 데이터가 없습니다. 사이드바의 '0면 동 제외'를 해제해보세요.")
+    st.stop()
 
 fig2 = px.imshow(
     prof, text_auto=".1f", aspect="auto",
@@ -138,5 +154,6 @@ b1.success(f"**가장 여유**: {best[0]}요일 {TIMESLOT_LABEL[best[1]]} — {p
 b2.error(f"**가장 빠듯**: {worst[0]}요일 {TIMESLOT_LABEL[worst[1]]} — {prof.loc[worst]:.1f}")
 
 diff = (prof.loc[best] / prof.loc[worst] - 1) * 100
-st.info(f"**{sel_gu} {dong}**은 가장 빠듯한 때보다 가장 여유로운 때가 **{diff:.0f}% 넉넉**합니다. "
+suffix = " (자치구 내 행정동 평균)" if dong == "전체" else ""
+st.info(f"**{label}**{suffix}은 가장 빠듯한 때보다 가장 여유로운 때가 **{diff:.0f}% 넉넉**합니다. "
         f"같은 주차장인데 사람 수가 달라서 생기는 차이입니다.", icon="💡")
