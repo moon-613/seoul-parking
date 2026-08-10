@@ -10,8 +10,10 @@ data/
 ├── external/                외부에서 받은 참조 데이터
 │   ├── dong_boundary.geojson  행정동 경계
 │   └── commercial/            상권분석 CSV (⬜ 미다운로드)
-├── interim/                 중간 가공물 (아직 없음)
-└── processed/               분석용 최종 테이블 (아직 없음)
+├── interim/                 중간 가공물
+│   └── parking_geocoded_standard.csv
+└── processed/               분석용 최종 테이블
+    └── panel.csv
 ```
 
 > ⚠️ `raw`·`interim`·`processed`·`external` 안의 데이터 파일은 `.gitignore`로 **git에 올라가지 않습니다.**
@@ -193,6 +195,56 @@ data/
 | `집객시설_행정동.csv` | OA-22169 |
 | `상주인구_행정동.csv` | OA-22183 |
 | `직장인구_행정동.csv` | OA-22184 |
+
+---
+
+## 5-1. `processed/panel.csv` — 분석용 패널 ✅
+
+**11,872행 × 21열** = 행정동 424개 × 요일 7 × 시간대 4
+
+| 컬럼 | 의미 | 시간에 따라 변함 |
+|---|---|---|
+| `adm_cd` / `admi_cd` | SGIS 코드 / 행안부 코드 | — |
+| `adm_nm` / `sgg_nm` / `admi_nm` | 풀네임 / 자치구 / 동명 | — |
+| `weekday` / `is_weekend` / `timeslot` | 패널 키 | — |
+| **`living_pop`** | 평균 생활인구 | ✅ |
+| `young_pop` / **`young_ratio`** | 20~30대 수 / 비중 | ✅ |
+| **`parking_slots`** | 주차면수 | ❌ 고정 |
+| `parking_lots` | 주차장 개소 | ❌ 고정 |
+| `avg_fee_per_hour` | 시간당 평균 요금(원) | ❌ 고정 |
+| `store_food` / `store_cafe` | 음식점 / 카페 점포수 | ❌ 고정 |
+| `facility_cnt` | 집객시설 수 | ❌ 고정 |
+| `resident_pop` / `worker_pop` | 상주인구 / 직장인구 | ❌ 고정 |
+| **`slots_per_1k`** | **1,000명당 주차면수** | ✅ (분모가 생활인구) |
+| `has_parking` | 주차장 보유 여부 | ❌ 고정 |
+
+> 💡 **시간에 따라 변하는 건 생활인구뿐입니다.** 주차·상권은 정적이라,
+> `slots_per_1k`처럼 생활인구를 분모로 쓰는 변수만 요일·시간대에 반응합니다.
+
+**예시 (사직동)**
+
+| 요일 | 시간대 | 생활인구 | 주차면 | 1,000명당 |
+|---|---|---|---|---|
+| 금 | 점심 | 43,131 | 1,306 | 30.3 |
+| 금 | 저녁밤 | 21,927 | 1,306 | **59.6** |
+
+같은 주차면수인데 사람이 절반이라 체감 여유는 2배입니다.
+
+### 결측 현황
+
+| 컬럼 | 결측 | 사유 |
+|---|---|---|
+| `avg_fee_per_hour` | 4,172행 (149개 동) | 주차장 없는 동 109개 + 요금 산출 불가 40개 |
+| `worker_pop` | 280행 (10개 동) | 상권 직장인구 데이터가 414개 동만 제공 |
+| `store_food` 등 | 28행 (1개 동) | 상권 데이터에 없는 동 |
+
+⚠️ **주차장이 없는 행정동 109개** — `parking_slots=0`은 결측이 아니라 실제 0입니다.
+다만 민영 데이터 부재 때문일 수 있어 **주차난으로 해석하면 안 됩니다** (`has_parking`으로 구분).
+
+생성:
+```powershell
+.\.venv\Scripts\python.exe -m src.preprocess.build_panel --quarter 20261
+```
 
 ---
 
