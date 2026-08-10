@@ -73,8 +73,12 @@ def build_living_population() -> pd.DataFrame:
     return panel
 
 
-def build_parking() -> pd.DataFrame:
-    """주차장 -> 행정동(admi_cd)별 주차면수·평균요금."""
+# 서울시 API로 보충할 때 제외할 운영구분 (방문객이 쓸 수 없는 자리)
+SEOUL_EXCLUDE_OPER = ["거주자 우선 주차장", "버스전용 주차장"]
+
+
+def _build_parking_standard() -> pd.DataFrame:
+    """주 데이터: 전국주차장 표준데이터(서울분)."""
     path = DATA_INTERIM / "parking_geocoded_standard.csv"
     if not path.exists():
         raise FileNotFoundError("주차장 지오코딩 결과가 없습니다. geocode_parking.py를 먼저 실행하세요.")
@@ -86,12 +90,10 @@ def build_parking() -> pd.DataFrame:
     # 무료 주차장은 결측이 아니라 0원이다. 기본시간이 0이면 환산 불가라 결측 처리.
     basic_charge = pd.to_numeric(pk.get("basicCharge"), errors="coerce")
     basic_time = pd.to_numeric(pk.get("basicTime"), errors="coerce")
-
     fee = (basic_charge / basic_time.replace(0, pd.NA) * 60).where(basic_time > 0)
-    fee = fee.mask(pk.get("parkingchrgeInfo") == "무료", 0.0)
-    pk["fee_per_hour"] = fee
+    pk["fee_per_hour"] = fee.mask(pk.get("parkingchrgeInfo") == "무료", 0.0)
 
-    agg = (
+    return (
         pk.groupby("geo_adm_cd", as_index=False)
         .agg(
             parking_slots=("prkcmprt", "sum"),
@@ -100,8 +102,60 @@ def build_parking() -> pd.DataFrame:
         )
         .rename(columns={"geo_adm_cd": "adm_cd"})
     )
-    logger.info(f"주차장 집계: {len(agg)}개 행정동 / {agg.parking_slots.sum():,.0f}면")
-    return agg
+
+
+def _build_parking_seoul() -> pd.DataFrame:
+    """보충 데이터: 서울시 공영주차장 API.
+
+    거주자우선·버스전용은 방문객이 쓸 수 없으므로 제외한다.
+    """
+    path = DATA_INTERIM / "parking_geocoded.csv"
+    if not path.exists():
+        logger.warning("서울시 공영주차장 지오코딩 결과가 없어 보충을 건너뜁니다.")
+        return pd.DataFrame(columns=["adm_cd", "parking_slots", "parking_lots", "avg_fee_per_hour"])
+
+    pk = pd.read_csv(path, dtype={"geo_adm_cd": str})
+    pk = pk[~pk["OPER_SE_NM"].isin(SEOUL_EXCLUDE_OPER)]
+    pk["TPKCT"] = pd.to_numeric(pk["TPKCT"], errors="coerce")
+
+    # PRK_CRG(요금) / PRK_HM(기준시간, 분) -> 시간당
+    crg = pd.to_numeric(pk.get("PRK_CRG"), errors="coerce")
+    hm = pd.to_numeric(pk.get("PRK_HM"), errors="coerce")
+    pk["fee_per_hour"] = (crg / hm.replace(0, pd.NA) * 60).where(hm > 0)
+
+    return (
+        pk.groupby("geo_adm_cd", as_index=False)
+        .agg(
+            parking_slots=("TPKCT", "sum"),
+            parking_lots=("TPKCT", "size"),
+            avg_fee_per_hour=("fee_per_hour", "mean"),
+        )
+        .rename(columns={"geo_adm_cd": "adm_cd"})
+    )
+
+
+def build_parking() -> pd.DataFrame:
+    """행정동별 공영주차 공급.
+
+    표준데이터를 기본으로 쓰고, **표준데이터에 한 면도 없는 행정동에만**
+    서울시 공영주차장 API로 보충한다. 겹치는 동이 없으므로 이중 계산이 발생하지 않는다.
+    (표준데이터 단독으로는 성수1가2동·왕십리도선동 등 주요 지역이 0면으로 남는다)
+    """
+    std = _build_parking_standard()
+    seoul = _build_parking_seoul()
+
+    covered = set(std.loc[std["parking_slots"] > 0, "adm_cd"])
+    supplement = seoul[~seoul["adm_cd"].isin(covered) & (seoul["parking_slots"] > 0)].copy()
+    supplement["source"] = "seoul_api"
+    std["source"] = "standard"
+
+    merged = pd.concat([std, supplement], ignore_index=True)
+    logger.info(
+        f"주차 공급: 표준 {len(covered)}개 동 {std.parking_slots.sum():,.0f}면 "
+        f"+ 보충 {len(supplement)}개 동 {supplement.parking_slots.sum():,.0f}면"
+    )
+    logger.info(f"  합계 {merged.adm_cd.nunique()}개 행정동 / {merged.parking_slots.sum():,.0f}면")
+    return merged
 
 
 def build_commercial(quarter: str) -> pd.DataFrame:
@@ -155,7 +209,9 @@ def main():
     panel["parking_slots"] = panel["parking_slots"].fillna(0)
     panel["parking_lots"] = panel["parking_lots"].fillna(0)
 
-    # 시간에 따라 변하는 핵심 파생변수
+    panel["source"] = panel["source"].fillna("none")
+
+    # 시간에 따라 변하는 핵심 파생변수 (분모가 생활인구라 요일·시간대에 반응)
     panel["slots_per_1k"] = panel["parking_slots"] / panel["living_pop"] * 1000
     panel["has_parking"] = panel["parking_slots"] > 0
 
