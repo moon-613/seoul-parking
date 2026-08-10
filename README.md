@@ -31,8 +31,9 @@ OpenAPI 수집 (src/collect) → 전처리/병합 (src/preprocess) → 분석 (s
 └── tests/                      # 단위 테스트
 ```
 
-## 진행 일지
-매일 작업 내용/트러블슈팅/남은 작업은 [PROGRESS.md](./PROGRESS.md)에 기록.
+## 문서
+- [PROGRESS.md](./PROGRESS.md) — 일자별 진행 내용 / 트러블슈팅 / 남은 작업
+- [docs/data_sources.md](./docs/data_sources.md) — 수집 데이터 6종 명세, 최종 테이블 스키마, 대시보드 매핑
 
 ## 시작하기
 

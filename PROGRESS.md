@@ -9,18 +9,60 @@
 ## Day 1 - 2026-08-10 (월)
 
 ### ✅ 오늘 한 작업
-- 프로젝트 기본 구조 세팅 (config, data, src/collect·preprocess·analysis, dashboard, reports, docs, tests)
-- 서울 열린데이터광장 OpenAPI 공통 클라이언트 작성 (`src/utils/api_client.py`) - 페이지네이션/재시도 포함
-- 수집 대상 API 확정: 생활인구(SPOP_LOCAL_RESD_DONG), 주차장정보(GetParkInfo), 등록차량(TbCarRegistNum), 행정동경계(SGIS)
-- Streamlit 대시보드 스켈레톤 작성 (홈/지도/행정동 상세)
+
+**1. 프로젝트 기획 구체화**
+- 문제 정의: 주말 나들이 시 주차 만차로 시간 낭비 → **코스 결정 전에 주차 여유·혼잡도를 미리 보는 도구**
+- 분석 단위 확정: **행정동 × 요일 × 시간대 = 1행** (기존 행정동 단독 → 패널 구조로 변경)
+- 시간대 4구간 확정: 아침(06-11) / 점심(11-14) / 오후(14-18) / 저녁밤(18-24)
+
+**2. 프로젝트 구조 세팅 + git 초기화**
+- 디렉토리: `config`, `data/{raw,interim,processed,external}`, `src/{collect,preprocess,analysis,utils}`, `dashboard`, `reports`, `docs`, `tests`
+- `git init` + 첫 커밋 (`86738b1`, 33개 파일)
+
+**3. 수집 기반 코드 작성**
+| 파일 | 역할 |
+|---|---|
+| `src/utils/api_client.py` | 서울 열린데이터광장 공통 클라이언트 (페이지네이션 + 재시도) |
+| `src/utils/settings.py` | `.env` / `config.yaml` 로딩 |
+| `src/utils/timeslot.py` | 요일·시간대 파생 (패널 키 기준) |
+| `src/collect/fetch_living_population.py` | 생활인구 (행정동×시간대) |
+| `src/collect/fetch_parking_lots.py` | 공영주차장 안내정보 (공급=총주차면수) |
+| `src/collect/fetch_parking_realtime.py` | 시영주차장 실시간 주차대수 스냅샷 |
+| `src/collect/fetch_poi_kakao.py` | 카카오 로컬 API POI 밀집도 |
+| `src/collect/fetch_dong_boundary.py` | SGIS 행정동 경계 |
+| `src/collect/fetch_registered_vehicles.py` | 자치구별 등록차량 |
+
+**4. Streamlit 대시보드 스켈레톤** (홈 / 지도 / 행정동 상세)
 
 ### 🔧 트러블슈팅
--
+
+**① 실시간 주차대수 컬럼 폐지 발견 (중요)**
+- 문제: 공영주차장 안내정보(`GetParkInfo`, 약 14,000개)로 실시간 여유율을 만들려 했으나, `CUR_PARKING`(현재주차대수) 컬럼이 **"실시간 데이터 제공이 어려워 삭제, 추후 제공예정 없음"** 으로 폐지된 것을 확인
+- 해결: **하이브리드 구조**로 설계 변경
+  - 공급(총주차면수) → `GetParkInfo` 전체 사용 (모든 행정동 커버)
+  - 실측 여유율 → 별도 데이터셋 **OA-21709 시영주차장 실시간 주차대수**(5분 주기) 폴링, 단 커버리지는 시영주차장으로 제한
+  - 미커버 행정동 → 생활인구 기반 추정 여유율로 대체
+- 남은 리스크: OA-21709의 정확한 OpenAPI 서비스명 미확인 (`config.yaml`에 `GetParkingInfo`로 임시 입력, 포털 'Open API' 탭에서 검증 필요)
+
+**② 과거 시간대별 주차 데이터 부재**
+- 문제: 공공 API는 '현재 상태'만 제공, 과거 요일×시간대 통계 없음
+- 해결: 스냅샷을 **자동 스케줄 폴링**으로 일주일간 누적하기로 결정 (`data/raw/parking_snapshots/`)
+
+**③ 카카오 API 요청 수 과다 우려**
+- 문제: 행정동(약 425개) × 카테고리 4종의 장소 목록을 전부 페이징하면 요청 수가 큼
+- 해결: 목록 대신 응답의 `meta.total_count`만 사용 → **요청 1회로 밀집도 확보**, 총 약 1,700회로 축소
+
+**④ VS Code에서 `.env`가 흐리게 표시되지 않음**
+- 원인: 폴더를 연 뒤에 `git init`을 해서 VS Code git 확장이 저장소를 미감지
+- 확인: `git check-ignore -v .env` → `.gitignore:2:.env` 로 정상 무시됨 (GitHub 업로드 안 됨)
+- 해결: Reload Window로 저장소 재인식
 
 ### 📌 남은 작업
-- API 키 발급 (서울 열린데이터광장, SGIS)
-- 수집 스크립트 실제 실행 및 응답 스키마 확인 → data_dictionary.md 갱신
-- 전처리 병합 로직 구현 (`clean_merge.py`)
+- [ ] API 키 발급 완료 확인 (서울 열린데이터광장 / 카카오 / SGIS)
+- [ ] OA-21709 실시간 주차 서비스명 검증 → `config.yaml` 수정
+- [ ] 생활인구 다일자(4주) 수집으로 확장 — **작업 중단된 지점**
+- [ ] 각 API 1회 호출해 실제 응답 스키마 확인 → `docs/data_dictionary.md` 갱신
+- [ ] 주차 스냅샷 자동 폴링 스케줄 등록 (하루 4회)
 
 ---
 
