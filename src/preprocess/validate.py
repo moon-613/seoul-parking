@@ -88,7 +88,25 @@ def validate_raw(rep: Report) -> None:
         need = {"prkplceNm", "prkcmprt", "prkplceSe", "lnmadr"}
         rep.check(need <= set(df.columns), "주차장 필수 컬럼", f"누락 {need - set(df.columns)}")
 
-    rep.check((DATA_EXTERNAL / "dong_boundary.geojson").exists(), "행정동 경계 존재")
+    bnd_path = DATA_EXTERNAL / "dong_boundary.geojson"
+    rep.check(bnd_path.exists(), "행정동 경계 존재")
+    if bnd_path.exists():
+        with open(bnd_path, encoding="utf-8") as fp:
+            bnd = json.load(fp)
+        xs, ys = [], []
+        for ft in bnd["features"]:
+            c = ft["geometry"]["coordinates"]
+            while isinstance(c[0], list):
+                c = c[0]
+            xs.append(c[0])
+            ys.append(c[1])
+        # SGIS는 CRS84라고 선언하면서 UTM-K 미터 좌표를 주는 경우가 있다.
+        # 미터 좌표면 지도에 아무것도 안 그려지므로 값으로 직접 확인한다.
+        in_seoul = 126.5 <= min(xs) and max(xs) <= 127.3 and 37.3 <= min(ys) and max(ys) <= 37.8
+        rep.check(in_seoul, "경계 좌표가 서울 경위도 범위",
+                  f"경도 {min(xs):.3f}~{max(xs):.3f} / 위도 {min(ys):.3f}~{max(ys):.3f} "
+                  "— 미터 좌표면 EPSG:5179→4326 재투영 필요")
+
     rep.check((DATA_EXTERNAL / "dong_crosswalk.csv").exists(), "행정동 크로스워크 존재")
 
 
