@@ -19,8 +19,11 @@ folium>=0.16
 streamlit-folium>=0.21
 matplotlib>=3.8
 
-# --- 보고서 ---
+# --- 보고서 / 제출물 ---
 jinja2>=3.1
+python-docx>=1.1        # 기획서 docx 편집 (Windows의 Word COM 대체)
+python-pptx>=1.0        # 발표자료(=보고서) PPT 생성
+pillow>=10.0            # 그림 규격 확인
 
 # --- 개발 / 테스트 ---
 pytest>=8.0
