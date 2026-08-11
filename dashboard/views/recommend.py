@@ -6,16 +6,14 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from common import (
-    TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS,
+    COURSE_COLOR, INK, SCALE_SEQ, TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS,
     apply_filters, page_header, require_analysis, require_data, scope_phrase,
-    sidebar_filters,
+    sidebar_filters, with_parking,
 )
 
-st.set_page_config(page_title="코스 추천 | 서울 나들이 주차", page_icon="🎯", layout="wide")
-
 df = require_data()
-f = sidebar_filters(df)
-suit = require_analysis("suitability", "suitability")
+f = sidebar_filters(df, need=("weekday", "timeslot", "gu"))
+suit = require_analysis("suitability")
 d = apply_filters(df, f, apply_gu=False).dropna(subset=["store_food"])
 
 page_header(
@@ -28,13 +26,27 @@ if d.empty:
     st.stop()
 
 # ── 기준선 설정 ────────────────────────────────────────────────
-c1, c2 = st.columns(2)
-food_q = c1.slider("놀거리 기준선 (음식점 수 상위 %)", 10, 90, 50, 5,
-                   help="이 값보다 음식점이 많은 동네를 '놀거리 많음'으로 봅니다")
-park_q = c2.slider("주차 기준선 (천명당 주차면 상위 %)", 10, 90, 50, 5)
+# 백분위가 아니라 실제 값으로 받는다.
+# 백분위('상위 X%')는 슬라이더를 오른쪽으로 밀수록 기준이 느슨해져 기준선이 왼쪽으로 갔다.
+# 슬라이더와 화면 위의 선이 반대로 움직이는 셈이라 조작이 어긋났다.
+# 실값으로 두면 슬라이더를 오른쪽으로 밀면 선도 오른쪽으로 가고 기준이 엄격해진다.
+#
+# 범위는 필터를 바꿔도 흔들리지 않게 패널 전체(모든 요일·시간대)에서 잡는다.
+# 상위 5%는 극단값이라 슬라이더 눈금을 낭비하므로 95분위에서 끊는다.
+_all = df[df["has_parking"]]
+FOOD_MAX = int(round(_all["store_food"].quantile(0.95), -1))
+PARK_MAX = float(round(_all["slots_per_1k"].quantile(0.95)))
 
-food_line = d["store_food"].quantile(1 - food_q / 100)
-park_line = d["slots_per_1k"].quantile(1 - park_q / 100)
+c1, c2 = st.columns(2)
+food_line = c1.slider(
+    "놀거리 기준 — 음식점 수", 0, FOOD_MAX, 200, 20,
+    help=f"이 개수 이상인 동네를 '놀거리 많음'으로 봅니다. "
+         f"오른쪽으로 밀수록 기준이 엄격해집니다. (상위 5%인 {FOOD_MAX}개 초과는 눈금 밖)",
+)
+park_line = c2.slider(
+    "주차 기준 — 1,000명당 공영주차면", 0.0, PARK_MAX, 6.0, 0.5,
+    help="이 값 이상인 동네를 '주차 여유'로 봅니다. 오른쪽으로 밀수록 기준이 엄격해집니다.",
+)
 
 d = d.copy()
 d["구분"] = "그 외"
@@ -42,7 +54,7 @@ d.loc[(d.store_food >= food_line) & (d.slots_per_1k >= park_line), "구분"] = "
 d.loc[(d.store_food >= food_line) & (d.slots_per_1k < park_line), "구분"] = "혼잡 주의"
 d.loc[(d.store_food < food_line) & (d.slots_per_1k >= park_line), "구분"] = "한산"
 
-COLORS = {"⭐ 추천": "#2CA02C", "혼잡 주의": "#D62728", "한산": "#7F9FBF", "그 외": "#D9D9D9"}
+COLORS = COURSE_COLOR
 
 st.markdown(f"#### {scope_phrase(f)}")
 
@@ -61,15 +73,16 @@ fig = px.scatter(
     labels={"store_food": "음식점 수 (놀거리)", "slots_per_1k": "1,000명당 공영주차면 (여유)",
             "sgg_nm": "자치구", "living_pop": "생활인구", "parking_slots": "공영주차면"},
 )
-fig.add_vline(x=food_line, line_dash="dash", line_color="#888")
-fig.add_hline(y=park_line, line_dash="dash", line_color="#888")
+fig.add_vline(x=food_line, line_dash="dash", line_color=INK["muted"])
+fig.add_hline(y=park_line, line_dash="dash", line_color=INK["muted"])
 fig.add_annotation(x=d.store_food.max() * 0.92, y=d.slots_per_1k.max() * 0.95,
-                   text="⭐ 놀거리↑ 주차↑", showarrow=False, font=dict(size=13, color="#2CA02C"))
+                   text="⭐ 놀거리↑ 주차↑", showarrow=False, font=dict(size=13, color=COURSE_COLOR["⭐ 추천"]))
 fig.update_layout(height=560, margin=dict(t=20, b=10),
                   legend=dict(orientation="h", y=1.08))
 fig.update_yaxes(range=[0, d.slots_per_1k.quantile(0.98) * 1.1])
 st.plotly_chart(fig, use_container_width=True)
-st.caption("원 크기는 생활인구입니다. 세로축은 상위 2%를 잘라 표시합니다.")
+st.caption(f"점선이 위에서 정한 기준입니다 — 음식점 **{food_line:,}개** · 천명당 **{park_line:.1f}면**. "
+           "오른쪽 위로 갈수록 나들이하기 좋습니다. 원 크기는 생활인구이고, 세로축은 상위 2%를 잘라 표시합니다.")
 
 st.divider()
 
@@ -142,8 +155,8 @@ else:
     src = df[(df["sgg_nm"] == sel_gu) & (df["admi_nm"] == dong)]
     label = f"{sel_gu} {dong}"
 
-if f["exclude_zero"]:
-    src = src[src["has_parking"]]
+# 0면 동은 요일·시간대와 무관하게 값이 0이라 '언제 가면 좋은가'를 못 낸다
+src = with_parking(src)
 
 prof = src.pivot_table(
     index="weekday", columns="timeslot", values="slots_per_1k", observed=True
@@ -155,7 +168,7 @@ if prof.isna().all().all():
 
 fig2 = px.imshow(
     prof, text_auto=".1f", aspect="auto",
-    color_continuous_scale="RdYlBu", origin="upper",
+    color_continuous_scale=SCALE_SEQ, origin="upper",
     labels=dict(x="시간대", y="요일", color="천명당주차면"),
 )
 fig2.update_layout(height=380, margin=dict(t=10, b=10))

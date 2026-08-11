@@ -14,14 +14,18 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from common import page_header, require_analysis, require_data
-
-st.set_page_config(page_title="확충 우선순위 | 서울 공영주차 진단",
-                   page_icon="🏗️", layout="wide")
+from common import ACCENT, ALERT, SCALE_SEQ, page_header, require_analysis, require_data
 
 require_data()
-rd = require_analysis("real_demand", "real_demand")
-sgg = require_analysis("sgg", "district")
+rd = require_analysis("real_demand")
+# 순위는 잔차가 아니라 직접 지표로 낸다.
+# 잔차는 생활인구/비아파트 가구로 기대 공급을 보정한 값인데 설명력이 R²=0.004로 낮아
+# 보정이 거의 일어나지 않는다(잔차 순위 ↔ 주차면수 순위 상관 0.997).
+# 담당자에게는 "6,838가구에 1면"처럼 바로 읽히는 값이 정확하다.
+rd = rd.merge(
+    require_data()[["admi_cd", "slots_per_100_nonapt"]].drop_duplicates(),
+    on="admi_cd", how="left")
+sgg = require_analysis("sgg")
 
 page_header(
     "🏗️ 공영주차장 확충 우선순위",
@@ -64,7 +68,7 @@ s = s.assign(구분=lambda x: x["실수요100가구당"].lt(med).map({True: "중
 
 fig = px.bar(
     s, x="실수요100가구당", y="자치구", orientation="h", color="구분",
-    color_discrete_map={"중앙값 미만": "#D62728", "중앙값 이상": "#4C78A8"},
+    color_discrete_map={"중앙값 미만": ALERT, "중앙값 이상": ACCENT},
     hover_data={"비아파트가구": ":,.0f", "공영주차면": ":,.0f",
                 "확충후보": True, "확충불필요": True, "구분": False},
     labels={"실수요100가구당": "실수요 100가구당 공영주차면"},
@@ -87,28 +91,31 @@ if cand.empty:
 else:
     c1, c2 = st.columns([3, 2])
     with c1:
-        top = cand.nsmallest(15, "z_정주").sort_values("z_정주", ascending=False)
+        top = cand.nsmallest(15, "slots_per_100_nonapt").sort_values(
+            "slots_per_100_nonapt", ascending=False)
         figc = px.bar(
             top, x="non_apt_households", y="admi_nm", orientation="h",
-            color="z_정주", color_continuous_scale="Reds_r",
+            color="slots_per_100_nonapt", color_continuous_scale=SCALE_SEQ[::-1],
             hover_data={"sgg_nm": True, "parking_slots": ":,.0f",
-                        "apt_ratio": ":.1%", "z_정주": ":.2f"},
+                        "apt_ratio": ":.1%", "slots_per_100_nonapt": ":.2f"},
             labels={"non_apt_households": "비아파트 가구 수 (공영주차 실수요)",
-                    "admi_nm": "", "z_정주": "부족 정도"},
+                    "admi_nm": "", "slots_per_100_nonapt": "100가구당 주차면"},
         )
         figc.update_layout(height=520, margin=dict(t=20, b=10), coloraxis_showscale=False)
         st.plotly_chart(figc, use_container_width=True)
-        st.caption("색이 진할수록 기대 대비 부족이 심합니다. 막대 길이는 실수요 규모입니다.")
+        st.caption("색이 진할수록 가구 수 대비 주차면이 적습니다. 막대 길이는 실수요 규모입니다.")
     with c2:
-        show = cand.nsmallest(15, "z_정주")[
-            ["sgg_nm", "admi_nm", "non_apt_households", "parking_slots", "apt_ratio", "z_정주"]]
+        show = cand.nsmallest(15, "slots_per_100_nonapt")[
+            ["sgg_nm", "admi_nm", "non_apt_households", "parking_slots",
+             "slots_per_100_nonapt", "apt_ratio"]]
         st.dataframe(
             show.rename(columns={"sgg_nm": "자치구", "admi_nm": "행정동",
                                  "non_apt_households": "비아파트가구",
-                                 "parking_slots": "주차면", "apt_ratio": "아파트비율",
-                                 "z_정주": "부족정도"}).style.format(
+                                 "parking_slots": "주차면",
+                                 "slots_per_100_nonapt": "100가구당",
+                                 "apt_ratio": "아파트비율"}).style.format(
                 {"비아파트가구": "{:,.0f}", "주차면": "{:,.0f}",
-                 "아파트비율": "{:.1%}", "부족정도": "{:.2f}"}),
+                 "100가구당": "{:.2f}", "아파트비율": "{:.1%}"}),
             use_container_width=True, hide_index=True, height=520,
         )
 
@@ -162,12 +169,13 @@ new_cand = scope[scope.구분 == "정주만 부족(누락)"]
 if not new_cand.empty:
     st.markdown("**➕ 생활인구로는 놓쳤던 확충 후보**")
     st.dataframe(
-        new_cand[["sgg_nm", "admi_nm", "non_apt_households", "apt_ratio", "parking_slots", "z_정주"]]
+        new_cand[["sgg_nm", "admi_nm", "non_apt_households", "parking_slots",
+                  "slots_per_100_nonapt", "apt_ratio"]]
         .rename(columns={"sgg_nm": "자치구", "admi_nm": "행정동",
-                         "non_apt_households": "비아파트가구", "apt_ratio": "아파트비율",
-                         "parking_slots": "주차면", "z_정주": "부족정도"})
-        .style.format({"비아파트가구": "{:,.0f}", "아파트비율": "{:.1%}",
-                       "주차면": "{:,.0f}", "부족정도": "{:.2f}"}),
+                         "non_apt_households": "비아파트가구", "parking_slots": "주차면",
+                         "slots_per_100_nonapt": "100가구당", "apt_ratio": "아파트비율"})
+        .style.format({"비아파트가구": "{:,.0f}", "주차면": "{:,.0f}",
+                       "100가구당": "{:.2f}", "아파트비율": "{:.1%}"}),
         use_container_width=True, hide_index=True,
     )
 
@@ -201,7 +209,9 @@ else:
 st.divider()
 st.caption(
     "정주수요 = 일반가구 − 아파트 가구 (인구주택총조사 2025). "
-    "부족 정도는 로그-로그 회귀의 표준화 잔차이며 −1 이하를 공급부족으로 봅니다. "
-    "설명력(R²)은 유동수요 0.068 · 정주수요 0.004로 낮은데, **공영주차 배치가 "
-    "어떤 수요 지표로도 설명되지 않는다**는 뜻이며 이것이 재설정이 필요한 근거입니다."
+    "**순위는 '비아파트 100가구당 주차면'이라는 직접 지표로 냅니다.** "
+    "확충 후보를 가려낸 기준(로그-로그 회귀의 표준화 잔차 ≤ −1)은 그대로지만, "
+    "그 회귀의 설명력이 R² 0.004(유동수요 0.068)로 낮아 보정이 거의 일어나지 않습니다. "
+    "**공영주차 배치가 어떤 수요 지표로도 설명되지 않는다**는 뜻이고, "
+    "그래서 순위는 회귀를 거치지 않은 직접 지표로 제시하는 편이 정확합니다."
 )

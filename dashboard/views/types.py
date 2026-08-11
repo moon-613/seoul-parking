@@ -13,12 +13,13 @@ from sklearn.decomposition import PCA
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
-from common import TIMESLOT_LABEL, apply_filters, page_header, require_data, sidebar_filters
-
-st.set_page_config(page_title="동네 유형 | 서울 나들이 주차", page_icon="🧩", layout="wide")
+from common import (
+    ALERT, SCALE_DIV, TIMESLOT_LABEL,
+    apply_filters, page_header, require_data, sidebar_filters,
+)
 
 df = require_data()
-f = sidebar_filters(df)
+f = sidebar_filters(df, need=("weekday", "timeslot"))
 d = apply_filters(df, f, apply_gu=False)
 
 page_header(
@@ -76,7 +77,7 @@ with c2:
     st.markdown(f"**군집 수별 실루엣 계수** — 최적 k = {best_k}")
     sil_df = pd.DataFrame({"k": list(sil), "실루엣계수": list(sil.values())})
     figs = px.line(sil_df, x="k", y="실루엣계수", markers=True)
-    figs.add_vline(x=k, line_dash="dash", line_color="#D62728",
+    figs.add_vline(x=k, line_dash="dash", line_color=ALERT,
                    annotation_text=f"선택 k={k}", annotation_position="top")
     figs.update_layout(height=230, margin=dict(t=30, b=10, l=10, r=10))
     figs.update_xaxes(tickmode="linear", dtick=1)
@@ -117,7 +118,7 @@ with g2:
     load = pd.DataFrame(
         pca.components_[:2].T, index=[FEATURES[c] for c in FEATURES], columns=["PC1", "PC2"]
     )
-    figl = px.imshow(load, text_auto=".2f", color_continuous_scale="RdBu_r",
+    figl = px.imshow(load, text_auto=".2f", color_continuous_scale=SCALE_DIV,
                      zmin=-0.7, zmax=0.7, aspect="auto",
                      labels=dict(color="로딩"))
     figl.update_layout(height=460, margin=dict(t=10, b=10), coloraxis_showscale=False)

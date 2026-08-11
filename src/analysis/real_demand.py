@@ -26,9 +26,21 @@
 
 R²에 대한 정직한 서술
 ------------------
-실수요로 바꿔도 설명력은 오르지 않는다(생활인구 0.074 -> 비아파트 0.016).
+실수요로 바꿔도 설명력은 오르지 않는다(생활인구 0.068 -> 비아파트 0.004).
 이것 자체가 발견이다 — **서울 공영주차장 배치는 어떤 수요 지표로도 설명되지 않는다.**
 따라서 비아파트 가구는 설명력 개선용이 아니라 **오탐 제거용**으로 쓴다.
+
+잔차를 '수요 대비 부족'으로 읽으면 안 되는 이유
+------------------------------------------
+설명력이 낮다는 것은 회귀선이 거의 평평하다는 뜻이고, 그러면 잔차는
+'수요로 보정한 값'이 아니라 사실상 **주차면 수 그 자체**가 된다.
+  정주수요 기울기 0.082  -> 비아파트 가구가 10배 늘어도 기대 주차면은 1.21배
+  z_정주 순위 ↔ 주차면수 순위  스피어만 0.997 (하위 20개 중 19개 동일)
+  z_유동 순위 ↔ 주차면수 순위  스피어만 0.959
+그래서 확충 우선순위는 회귀를 거치지 않은 직접 지표로 제시한다.
+  slots_per_100_nonapt = 공영주차면 ÷ 비아파트 가구 × 100
+"6,838가구에 1면"처럼 그대로 읽히고, 보정한 척하지 않는다.
+잔차는 '공급부족' 판정 기준으로만 남긴다(임계 -1).
 """
 from __future__ import annotations
 
@@ -223,9 +235,20 @@ def main():
         ["sgg_nm", "admi_nm", "households", "apartment", "non_apt_households", "parking_slots"]
     ].to_string(index=False, float_format="%.0f"))
 
-    prio = d[d.판정_정주 == "공급부족"].nsmallest(15, "z_정주")
-    print(f"\n=== 확충 우선순위 TOP 15 (실수요 기준) ===")
-    print(prio[show].to_string(index=False, float_format="%.3f"))
+    # 순위는 잔차가 아니라 직접 지표로 낸다 (docstring '잔차를 ~ 읽으면 안 되는 이유' 참조)
+    cand = d[d.판정_정주 == "공급부족"].copy()
+    cand["100가구당"] = cand.parking_slots / cand.non_apt_households * 100
+    print(f"\n=== 확충 우선순위 TOP 15 — 비아파트 100가구당 공영주차면 ===")
+    print("    잔차가 아니라 직접 지표로 낸 순위. 회귀 설명력이 낮아 잔차가")
+    print("    사실상 주차면 수 자체가 되므로(순위상관 0.997) 보정한 척하지 않는다.")
+    print(cand.nsmallest(15, "100가구당")[
+        ["sgg_nm", "admi_nm", "non_apt_households", "parking_slots", "100가구당", "apt_ratio"]
+    ].to_string(index=False, float_format="%.2f"))
+
+    rho = stats.spearmanr(d.z_정주.dropna(),
+                          np.log1p(d.loc[d.z_정주.notna(), "parking_slots"])).statistic
+    print(f"\n  [검증] z_정주 순위 ↔ 주차면수 순위 스피어만 {rho:+.3f} "
+          f"— 1에 가까울수록 회귀 보정이 무의미하다는 뜻")
 
 
 if __name__ == "__main__":
