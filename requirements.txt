@@ -1,29 +1,8 @@
-# --- 데이터 수집 ---
-requests>=2.31
-python-dotenv>=1.0
-PyYAML>=6.0
-tenacity>=8.2          # API 재시도
+# 대시보드 구동에 필요한 최소 의존성 (Streamlit Community Cloud가 이 파일로 설치)
+# 수집·전처리·분석·테스트까지 돌리려면 requirements-dev.txt 를 설치하세요.
 
-# --- 전처리 / 분석 ---
+streamlit>=1.37
 pandas>=2.2
 numpy>=1.26
-geopandas>=0.14
-shapely>=2.0
-scikit-learn>=1.4
-
-# --- 시각화 / 대시보드 ---
-streamlit>=1.37
-plotly>=5.22
-folium>=0.16
-streamlit-folium>=0.21
-matplotlib>=3.8
-
-# --- 보고서 ---
-jinja2>=3.1
-
-# --- 개발 / 테스트 ---
-pytest>=8.0
-jupyter>=1.0
-
-# --- 대시보드 (Plotly 기반) ---
 plotly>=6.0
+scikit-learn>=1.4

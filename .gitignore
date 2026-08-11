@@ -20,6 +20,12 @@ data/external/*
 !data/processed/.gitkeep
 !data/external/.gitkeep
 
+## 예외: 대시보드 구동에 필요한 3개 파일은 배포를 위해 버전 관리
+## (Streamlit Community Cloud는 저장소 안의 파일만 읽을 수 있음)
+!data/processed/panel.csv
+!data/processed/dong_residual.csv
+!data/external/dong_boundary.geojson
+
 ## Reports / outputs
 reports/figures/*
 !reports/figures/.gitkeep
