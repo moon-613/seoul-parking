@@ -20,6 +20,7 @@ import pandas as pd
 from scipy import stats
 
 from src.utils.logger import get_logger
+from src.utils.plotstyle import use_korean_font
 from src.utils.settings import DATA_PROCESSED, ROOT_DIR
 from src.utils.timeslot import timeslot_order
 
@@ -27,9 +28,7 @@ logger = get_logger(__name__)
 
 FIG_DIR = ROOT_DIR / "reports" / "figures"
 
-# 한글 폰트 (Windows 기본)
-plt.rcParams["font.family"] = "Malgun Gothic"
-plt.rcParams["axes.unicode_minus"] = False
+use_korean_font()
 
 ANALYSIS_VARS = {
     "living_pop": "생활인구",

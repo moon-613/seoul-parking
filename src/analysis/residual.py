@@ -38,13 +38,13 @@ import pandas as pd
 from scipy import stats
 
 from src.utils.logger import get_logger
+from src.utils.plotstyle import use_korean_font
 from src.utils.settings import DATA_PROCESSED, ROOT_DIR, get_config
 
 logger = get_logger(__name__)
 
 FIG_DIR = ROOT_DIR / "reports" / "figures"
-plt.rcParams["font.family"] = "Malgun Gothic"
-plt.rcParams["axes.unicode_minus"] = False
+use_korean_font()
 
 # 다중회귀 후보 (VIF로 걸러낸다)
 MULTI_VARS = ["living_pop", "store_food", "facility_cnt", "resident_pop", "worker_pop"]

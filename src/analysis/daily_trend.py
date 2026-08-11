@@ -23,13 +23,13 @@ import pandas as pd
 
 from src.utils.holidays import add_day_flags
 from src.utils.logger import get_logger
+from src.utils.plotstyle import use_korean_font
 from src.utils.settings import DATA_RAW, ROOT_DIR
 
 logger = get_logger(__name__)
 
 FIG_DIR = ROOT_DIR / "reports" / "figures"
-plt.rcParams["font.family"] = "Malgun Gothic"
-plt.rcParams["axes.unicode_minus"] = False
+use_korean_font()
 
 WD = ["월", "화", "수", "목", "금", "토", "일"]
 COMMUTE_HOURS = (8, 9)      # 출근시간 — 휴일 판별에 민감
