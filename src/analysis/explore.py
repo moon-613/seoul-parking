@@ -137,6 +137,26 @@ def plot_gu_distribution(panel: pd.DataFrame) -> pd.DataFrame:
     return med
 
 
+def zero_parking_sensitivity(panel: pd.DataFrame) -> pd.DataFrame:
+    """0면 66개 동을 넣고 뺀 상관계수 비교 (가설 1·3 민감도).
+
+    상관·회귀에서 0면 동을 제외하는 것은 민영 미개방 영향이 섞여 있기 때문이지만,
+    `slots_per_1k = 0`은 결측이 아니라 실제 값이므로 포함한 결과도 함께 제시해야
+    "왜 뺐느냐"에 답할 수 있다.
+    """
+    d = panel[(panel.weekday == "토") & (panel.timeslot == "오후")]
+    rows = []
+    for a, label in [("living_pop", "생활인구"), ("store_food", "음식점수"),
+                     ("store_cafe", "카페수"), ("young_ratio", "20~30대비중")]:
+        ex = d[d.has_parking].dropna(subset=[a, "slots_per_1k"])
+        inc = d.dropna(subset=[a, "slots_per_1k"])
+        r_ex, p_ex = stats.pearsonr(ex[a], ex.slots_per_1k)
+        r_in, p_in = stats.pearsonr(inc[a], inc.slots_per_1k)
+        rows.append({"변수": label, "제외 r": r_ex, "제외 p": p_ex, "제외 n": len(ex),
+                     "포함 r": r_in, "포함 p": p_in, "포함 n": len(inc)})
+    return pd.DataFrame(rows).set_index("변수")
+
+
 def main():
     FIG_DIR.mkdir(parents=True, exist_ok=True)
     panel = load_panel()
@@ -149,6 +169,15 @@ def main():
     print("\n=== 가설 3 검증: 매력도 vs 1인당 공영주차면 ===")
     for v in ["음식점수", "카페수", "20~30대비중", "생활인구"]:
         print(f"  {v:12} vs 천명당주차면 : r = {r.loc[v, '천명당주차면']:+.3f}")
+
+    sens = zero_parking_sensitivity(panel)
+    print("\n=== 민감도: 공영주차 0면 66개 동을 포함하면 (천명당주차면과의 상관) ===")
+    for v, row in sens.iterrows():
+        flip = "  ← 부호 반전" if row["제외 r"] * row["포함 r"] < 0 else ""
+        print(f"  {v:12} 제외 r={row['제외 r']:+.3f}(n={row['제외 n']:.0f})"
+              f"   포함 r={row['포함 r']:+.3f}(n={row['포함 n']:.0f}){flip}")
+    print("  → 결론은 유지되나(가설1 매우 약함·가설3 기각) 제외 시 음의 상관이 다소 강해 보임.")
+    print("    보고서에는 제외 기준과 함께 이 표를 병기할 것.")
 
     print("\n=== 요일×시간대 지수 (전체=100) ===")
     print(idx.round(1).to_string())

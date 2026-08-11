@@ -23,6 +23,20 @@
   매력도 백분위 >= 60  -> 추천
 잔차 하위(<= -1.0)이면서 매력도가 높은 곳은 '혼잡 주의'로 따로 표시한다.
 사람이 몰리는데 공영주차가 없는, 가장 시간을 버리기 쉬운 조합이기 때문이다.
+
+공영주차 0면 66개 동을 왜 되살리는가
+--------------------------------
+회귀(residual.py)는 0면 동을 제외한다. 로그 변환이 불가능하고 민영 미개방 영향이
+섞여 있어 '공급 부족 1위'로 뽑으면 데이터 부재를 주차난으로 오독하기 때문이다.
+그러나 **이용자에게는 공영주차가 아예 없는 동네야말로 가장 먼저 알아야 할 정보**다.
+실제로 문정2동(음식점 821개)·길동(663개)은 혼잡 주의 1위 신촌동(46면)보다 사정이 나쁘다.
+그래서 잔차 없이 **매력도만으로** '공영주차 없음' 등급을 따로 만들어 표시한다.
+(잔차가 없으므로 추천 순위에는 넣지 않는다)
+
+매력도 백분위는 424개 동 전체 기준
+-------------------------------
+0면 동을 되살렸으므로 백분위 모집단도 주차 있는 358개가 아니라 전체가 되어야 한다.
+이용자가 갈 수 있는 곳 전부를 놓고 '상위 몇 %'인지 따져야 의미가 맞기 때문이다.
 """
 from __future__ import annotations
 
@@ -47,7 +61,7 @@ APPEAL_MIN = 60.0   # 매력도 백분위 하한
 
 
 def load_joined() -> pd.DataFrame:
-    """잔차 결과에 매력도 변수를 붙인다 (기준 시점은 residual.py와 동일)."""
+    """기준 시점의 전체 행정동에 잔차를 붙인다 (0면 동은 잔차가 NaN으로 남는다)."""
     res_path = DATA_PROCESSED / "dong_residual.csv"
     if not res_path.exists():
         raise FileNotFoundError("잔차 결과가 없습니다. residual.py를 먼저 실행하세요.")
@@ -57,9 +71,15 @@ def load_joined() -> pd.DataFrame:
     panel = pd.read_csv(DATA_PROCESSED / "panel.csv", dtype={"adm_cd": str, "admi_cd": str})
     base = panel[(panel.weekday == cfg["weekday"]) & (panel.timeslot == cfg["timeslot"])]
 
-    d = res.merge(base[["admi_cd", "store_cafe", "facility_cnt", "slots_per_1k"]],
-                  on="admi_cd", how="left")
-    logger.info(f"잔차 {len(res)}개 동에 매력도 결합 / 결측 {d[APPEAL_VARS].isna().any(axis=1).sum()}개")
+    keep = ["adm_cd", "admi_cd", "sgg_nm", "admi_nm", "living_pop", "parking_slots",
+            "slots_per_1k", "has_parking", *APPEAL_VARS]
+    d = base[keep].merge(
+        res[["admi_cd", "expected_slots", "supply_ratio", "z_residual"]],
+        on="admi_cd", how="left")
+
+    n_zero = (~d.has_parking).sum()
+    logger.info(f"행정동 {len(d)}개 (공영주차 0면 {n_zero}개 포함) / "
+                f"매력도 결측 {d[APPEAL_VARS].isna().any(axis=1).sum()}개")
     return d.dropna(subset=APPEAL_VARS)
 
 
@@ -70,17 +90,20 @@ def score(d: pd.DataFrame) -> pd.DataFrame:
     hi = cfg["recommend_residual_threshold"]
 
     d = d.copy()
+    # 백분위 모집단은 0면 동을 포함한 전체 행정동
     for c in APPEAL_VARS:
         d[f"pct_{c}"] = d[c].rank(pct=True) * 100
     d["appeal"] = d[[f"pct_{c}" for c in APPEAL_VARS]].mean(axis=1)
-    d["parking_pct"] = d.z_residual.rank(pct=True) * 100
+    d["parking_pct"] = d.z_residual.rank(pct=True) * 100   # 0면 동은 NaN
 
     d["등급"] = "그 외"
     d.loc[(d.z_residual >= hi) & (d.appeal >= APPEAL_MIN), "등급"] = "추천"
     d.loc[(d.z_residual <= lo) & (d.appeal >= APPEAL_MIN), "등급"] = "혼잡 주의"
     d.loc[(d.z_residual >= hi) & (d.appeal < APPEAL_MIN), "등급"] = "한산"
+    # 잔차가 없는 0면 동은 매력도와 무관하게 별도 등급으로 표시한다
+    d.loc[~d.has_parking, "등급"] = "공영주차 없음"
 
-    # 추천 순위: 매력도와 주차 여유를 같은 비중으로
+    # 추천 순위: 매력도와 주차 여유를 같은 비중으로 (0면 동은 잔차가 없어 점수 없음)
     d["종합점수"] = (d.appeal + d.parking_pct) / 2
 
     for k, v in d.등급.value_counts().items():
@@ -92,14 +115,25 @@ def plot(d: pd.DataFrame) -> None:
     colors = {"추천": "#2CA02C", "혼잡 주의": "#D62728", "한산": "#7F9FBF", "그 외": "#D9D9D9"}
     cfg = get_config()["imbalance_index"]
 
-    fig, axes = plt.subplots(1, 2, figsize=(15, 6.5))
+    fig, axes = plt.subplots(1, 3, figsize=(20, 6.5))
 
     # ① 매력도 × 주차 여유 사분면
     ax = axes[0]
+    has = d[d.has_parking]
     for g in ["그 외", "한산", "혼잡 주의", "추천"]:
-        sub = d[d.등급 == g]
+        sub = has[has.등급 == g]
         ax.scatter(sub.appeal, sub.z_residual, s=22, alpha=0.8, label=f"{g} ({len(sub)})",
                    color=colors[g], edgecolor="none")
+
+    # 0면 동은 잔차가 없어 축에 못 올린다 -> 아래쪽 별도 띠에 표시
+    zero = d[~d.has_parking]
+    band = has.z_residual.min() - 0.55
+    ax.scatter(zero.appeal, np.full(len(zero), band), s=30, marker="x", lw=1.2,
+               color="#7A0C0C", label=f"공영주차 0면 ({len(zero)})")
+    ax.axhline(band + 0.28, color="#7A0C0C", lw=0.8, alpha=0.5)
+    ax.text(50, band + 0.36, "↓ 공영주차 0면 — 잔차를 구할 수 없어 별도 표시",
+            ha="center", fontsize=7.5, color="#7A0C0C")
+
     ax.axvline(APPEAL_MIN, color="#888", ls="--", lw=1)
     ax.axhline(cfg["recommend_residual_threshold"], color="#2CA02C", ls="--", lw=1)
     ax.axhline(cfg["vulnerable_residual_threshold"], color="#D62728", ls="--", lw=1)
@@ -109,11 +143,13 @@ def plot(d: pd.DataFrame) -> None:
     annotate_spread(ax, [(r.appeal, r.z_residual, r.admi_nm) for _, r
                          in d[d.등급 == "혼잡 주의"].nlargest(4, "appeal").iterrows()],
                     color="#8B1A1A")
+    annotate_spread(ax, [(r.appeal, band, r.admi_nm) for _, r
+                         in zero.nlargest(3, "appeal").iterrows()], color="#7A0C0C", fontsize=7.5)
 
     ax.set_xlabel("매력도 백분위 (음식점·카페·집객시설)")
     ax.set_ylabel("공영주차 여유 (표준화 잔차)")
     ax.set_title(f"매력도 × 주차 여유 (행정동 {len(d)}개)")
-    ax.legend(fontsize=9, loc="lower left")
+    ax.legend(fontsize=8, loc="upper left", framealpha=0.92)
     ax.grid(alpha=0.3)
 
     # ② 추천 동네 순위
@@ -132,6 +168,18 @@ def plot(d: pd.DataFrame) -> None:
         ax.legend(fontsize=9, loc="lower right")
         ax.grid(axis="x", alpha=0.3)
 
+    # ③ 공영주차 0면 — 갈 만한데 세울 데가 없는 곳
+    ax = axes[2]
+    zt = zero.nlargest(12, "appeal").iloc[::-1]
+    ax.barh(range(len(zt)), zt.appeal, color="#7A0C0C", alpha=0.85)
+    ax.set_yticks(range(len(zt)),
+                  [f"{r.sgg_nm} {r.admi_nm}\n음식점 {r.store_food:,.0f}" for _, r in zt.iterrows()],
+                  fontsize=7.5)
+    ax.set_xlabel("매력도 백분위")
+    ax.set_xlim(0, 100)
+    ax.set_title(f"공영주차 0면 — 매력도 TOP 12 (총 {len(zero)}개)")
+    ax.grid(axis="x", alpha=0.3)
+
     fig.tight_layout()
     fig.savefig(FIG_DIR / "recommend.png", dpi=150)
     plt.close(fig)
@@ -146,7 +194,8 @@ def main():
             "parking_pct", "z_residual", "supply_ratio", "parking_slots", "expected_slots",
             "slots_per_1k", "living_pop", *APPEAL_VARS]
     dest = DATA_PROCESSED / "dong_recommend.csv"
-    d[cols].sort_values("종합점수", ascending=False).to_csv(dest, index=False, encoding="utf-8-sig")
+    d[cols].sort_values(["등급", "종합점수"], ascending=[True, False]).to_csv(
+        dest, index=False, encoding="utf-8-sig")
     logger.info(f"저장 완료: {dest} ({len(d)}행)")
 
     plot(d)
@@ -158,14 +207,26 @@ def main():
     print(rec[show].to_string(index=False, float_format="%.0f"))
 
     warn = d[d.등급 == "혼잡 주의"].nlargest(10, "appeal")
-    print(f"\n=== 혼잡 주의 TOP 10 — 사람은 몰리는데 공영주차가 없는 곳 (총 {(d.등급 == '혼잡 주의').sum()}개) ===")
+    print(f"\n=== 혼잡 주의 TOP 10 — 사람은 몰리는데 공영주차가 부족한 곳 "
+          f"(총 {(d.등급 == '혼잡 주의').sum()}개) ===")
     print(warn[show].to_string(index=False, float_format="%.0f"))
+
+    zero = d[~d.has_parking]
+    print(f"\n=== 공영주차 0면 — 매력도 TOP 12 (총 {len(zero)}개) ===")
+    print("    잔차를 구할 수 없어 추천 순위에서는 빠지지만, 이용자에게는 가장 강한 경고 대상")
+    print(zero.nlargest(12, "appeal")[
+        ["sgg_nm", "admi_nm", "appeal", "store_food", "store_cafe", "facility_cnt", "living_pop"]
+    ].to_string(index=False, float_format="%.0f"))
+    print(f"\n  매력도 상위 25% 안에 드는 0면 동: {(zero.appeal >= 75).sum()}개 / {len(zero)}개")
+    print(f"  0면 동이 차지하는 비중: 생활인구 {zero.living_pop.sum()/d.living_pop.sum():.1%} "
+          f"/ 음식점 {zero.store_food.sum()/d.store_food.sum():.1%}")
 
     # 가설 4 판정: 두 조건을 동시에 만족하는 동네가 실제로 존재하는가
     n = (d.등급 == "추천").sum()
+    n_scored = d.has_parking.sum()
     print(f"\n=== 가설 4 판정 ===")
     print(f"  매력도 {APPEAL_MIN:.0f}백분위 이상 & 잔차 +1.0 이상 동시 만족: {n}개 동 "
-          f"({n / len(d):.1%})")
+          f"(잔차 산출 대상 {n_scored}개 중 {n / n_scored:.1%})")
     print(f"  -> {'지지' if n > 0 else '기각'}: 전반적 상충 관계에도 예외 지역이 "
           f"{'존재함' if n > 0 else '존재하지 않음'}")
 
