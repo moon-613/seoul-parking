@@ -1,8 +1,8 @@
 """분석용 패널 테이블 생성 -> data/processed/panel.csv
 
-패널 키: 행정동 × 요일(7) × 시간대(4구간)  ≈ 424 × 7 × 4
+패널 키: 행정동 × 요일(7) × 시간대  (구간 정의는 config/config.yaml)
 
-시간에 따라 변하는 값은 생활인구뿐이고, 주차·상권은 정적이다.
+시간에 따라 변하는 값은 생활인구뿐이고, 주차·상권·가구는 정적이다.
 따라서 '1,000명당 주차면수'처럼 생활인구를 분모로 쓰는 파생변수만 시간에 따라 변한다.
 
 조인 구조
@@ -10,6 +10,14 @@
   생활인구 ADSTRD_CODE_SE ─┐
   상권 행정동_코드          ─┼─ 행안부 행정동코드(admi_cd) 기준
   주차장 geo_adm_cd ── 크로스워크 ─┘   (SGIS 체계라 변환 필요)
+  총조사 거처종류별 가구 ── 행정동명 순서 매칭 ─┘  (자치구 컬럼이 없어 이름+순서로 가름)
+
+수요 지표가 둘인 이유
+------------------
+  생활인구        유동수요 — 나들이 이용자가 겪는 경쟁
+  비아파트 가구   정주수요 — 부설주차장이 없어 공영주차에 의존하는 가구
+아파트 거주자는 부설주차장이 있어 공영주차 실수요가 낮으므로, 확충 대상지를 고를 때는
+후자를 봐야 아파트 밀집지를 잘못 지목하지 않는다.
 """
 from __future__ import annotations
 
@@ -21,6 +29,7 @@ import geopandas as gpd
 import pandas as pd
 
 from src.preprocess.dong_code import build_crosswalk, attach_dong_keys
+from src.preprocess.load_census import load_census
 from src.preprocess.load_commercial import load_all
 from src.utils.holidays import add_day_flags
 from src.utils.logger import get_logger
@@ -223,6 +232,11 @@ def main():
     panel = panel.merge(build_parking(), on="adm_cd", how="left")
     panel = panel.merge(build_commercial(args.quarter), on="admi_cd", how="left")
 
+    # 거처종류별 가구 (총조사) — 행정동명 순서로 매칭하므로 admi_cd 정렬 순서를 넘긴다
+    dongs = (panel[["admi_cd", "admi_nm"]].drop_duplicates()
+             .sort_values("admi_cd").reset_index(drop=True))
+    panel = panel.merge(load_census(dongs), on="admi_cd", how="left")
+
     # 주차장이 없는 행정동은 0면 (결측 아님)
     panel["parking_slots"] = panel["parking_slots"].fillna(0)
     panel["parking_lots"] = panel["parking_lots"].fillna(0)
@@ -232,6 +246,12 @@ def main():
     # 시간에 따라 변하는 핵심 파생변수 (분모가 생활인구라 요일·시간대에 반응)
     panel["slots_per_1k"] = panel["parking_slots"] / panel["living_pop"] * 1000
     panel["has_parking"] = panel["parking_slots"] > 0
+
+    # 실수요(부설주차장이 없는 비아파트 가구) 대비 공급. 시간에 따라 변하지 않는다.
+    # 비아파트 가구가 0인 동(잠실2·7동)은 실수요가 없어 지표가 정의되지 않으므로 NaN으로 둔다.
+    panel["slots_per_100_nonapt"] = (
+        panel["parking_slots"] / panel["non_apt_households"].replace(0, pd.NA) * 100
+    )
 
     DATA_PROCESSED.mkdir(parents=True, exist_ok=True)
     dest = DATA_PROCESSED / "panel.csv"
