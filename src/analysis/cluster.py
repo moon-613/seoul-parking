@@ -153,8 +153,8 @@ def timeslot_profile(panel: pd.DataFrame, labels: pd.Series) -> pd.DataFrame:
 def plot(d: pd.DataFrame, pca: PCA, sil: dict, prof_idx: pd.DataFrame) -> None:
     # 아래 히트맵은 유형 수만큼만 높이를 주어 과하게 늘어나지 않게 한다
     n_type = len(prof_idx)
-    fig = plt.figure(figsize=(15, 5.5 + 0.55 * n_type))
-    gs = fig.add_gridspec(2, 2, height_ratios=[5, 0.75 * n_type], hspace=0.3, wspace=0.22)
+    fig = plt.figure(figsize=(19, 5.5 + 0.55 * n_type))
+    gs = fig.add_gridspec(2, 3, height_ratios=[5, 0.75 * n_type], hspace=0.45, wspace=0.28)
 
     # ① PCA 산점도
     ax = fig.add_subplot(gs[0, 0])
@@ -177,7 +177,27 @@ def plot(d: pd.DataFrame, pca: PCA, sil: dict, prof_idx: pd.DataFrame) -> None:
     ax.legend(fontsize=9)
     ax.grid(alpha=0.3)
 
-    # ③ 유형별 요일×시간대 프로파일 (가설 2의 핵심)
+    # ③ 유형별 특성 레이더 — 각 축은 유형 간 상대 위치(0~100), 절대값이 아니다
+    ax = fig.add_subplot(gs[0, 2], projection="polar")
+    prof = d.groupby("유형")[list(FEATURES)].mean()
+    prof.columns = [FEATURES[c] for c in prof.columns]
+    rng = (prof.max() - prof.min()).replace(0, 1)
+    norm = (prof - prof.min()) / rng * 100
+
+    labels = list(norm.columns)
+    ang = np.linspace(0, 2 * np.pi, len(labels), endpoint=False).tolist()
+    ang += ang[:1]
+    for nm, row in norm.iterrows():
+        vals = row.tolist() + [row.iloc[0]]
+        ax.plot(ang, vals, lw=1.8, label=nm)
+        ax.fill(ang, vals, alpha=0.18)
+    ax.set_xticks(ang[:-1], labels, fontsize=8)
+    ax.set_ylim(0, 100)
+    ax.set_yticks([0, 50, 100], ["0", "50", "100"], fontsize=7)
+    ax.set_title("유형별 특성 비교 (유형 간 상대 위치)", pad=18)
+    ax.legend(fontsize=8, loc="upper right", bbox_to_anchor=(1.18, 1.15))
+
+    # ④ 유형별 요일×시간대 프로파일 (가설 2의 핵심)
     ax = fig.add_subplot(gs[1, :])
     im = ax.imshow(prof_idx.values, cmap="RdYlBu", aspect="auto")
     ax.set_yticks(range(len(prof_idx)), prof_idx.index)
