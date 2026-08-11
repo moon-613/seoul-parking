@@ -8,7 +8,7 @@ import streamlit as st
 
 from common import (
     SCALE_SUPPLY, TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS,
-    apply_filters, page_header, require_data, sidebar_filters,
+    apply_filters, page_header, require_data, scope_phrase, sidebar_filters,
 )
 
 st.set_page_config(page_title="서울 나들이 주차 대시보드", page_icon="🅿️", layout="wide")
@@ -34,8 +34,7 @@ pop_sel, pop_all = d["living_pop"].mean(), base["living_pop"].mean()
 slot_sel, slot_all = d["slots_per_1k"].median(), base["slots_per_1k"].median()
 young_sel, young_all = d["young_ratio"].mean(), base["young_ratio"].mean()
 
-scope = "서울 전체" if f["gu"] == "전체" else f["gu"]
-st.markdown(f"#### {f['weekday']}요일 · {TIMESLOT_LABEL[f['timeslot']]} · {scope}")
+st.markdown(f"#### {scope_phrase(f)}")
 
 c1, c2, c3, c4 = st.columns(4)
 c1.metric("대상 행정동", f"{len(d):,}개",
@@ -77,7 +76,9 @@ fig = go.Figure()
 if f["gu"] != "전체":
     fig.add_trace(go.Scatter(x=TIMESLOTS, y=ref, name="서울 전체",
                              mode="lines+markers", line=dict(color="#B0B0B0", dash="dash")))
-fig.add_trace(go.Scatter(x=TIMESLOTS, y=cur, name=scope,
+# 범례는 문장이 아니라 짧은 이름이라야 해서 리드 문장과 따로 만든다
+scope_label = "서울 전체" if f["gu"] == "전체" else f["gu"]
+fig.add_trace(go.Scatter(x=TIMESLOTS, y=cur, name=scope_label,
                          mode="lines+markers", line=dict(color="#D62728", width=3)))
 # 선택 시간대는 노란 띠로만 표시한다
 fig.add_vrect(x0=sel_i - 0.45, x1=sel_i + 0.45,

@@ -20,9 +20,20 @@ if str(ROOT) not in sys.path:
 # src 모듈은 위에서 sys.path를 잡은 뒤에야 임포트할 수 있다
 from src.utils.timeslot import get_timeslots, get_weekday_names  # noqa: E402
 
-PANEL_PATH = ROOT / "data" / "processed" / "panel.csv"
-RESIDUAL_PATH = ROOT / "data" / "processed" / "dong_residual.csv"
+PROCESSED = ROOT / "data" / "processed"
+PANEL_PATH = PROCESSED / "panel.csv"
+RESIDUAL_PATH = PROCESSED / "dong_residual.csv"
 BOUNDARY_PATH = ROOT / "data" / "external" / "dong_boundary.geojson"
+
+# 정적 분석 산출물 — 대시보드에서 다시 계산하지 않고 그대로 읽는다.
+# (필터를 바꿔도 값이 흔들리면 보고서 수치와 어긋나기 때문)
+ANALYSIS_FILES = {
+    "real_demand": "dong_real_demand.csv",     # real_demand.py — 실수요 진단
+    "suitability": "dong_suitability.csv",     # suitability.py — 나들이 적합도 지수
+    "recommend": "dong_recommend.csv",         # recommend.py   — 추천/혼잡 등급
+    "timeslot": "dong_timeslot.csv",           # timeslot_effect.py — 동별 최적 시점
+    "sgg": "sgg_summary.csv",                  # district.py    — 자치구 요약
+}
 
 # 요일·시간대 정의는 config/config.yaml 한 곳에서만 관리한다.
 # 예전에는 여기에 값이 따로 박혀 있어 구간 설계를 바꾸면 대시보드가 어긋났다.
@@ -52,6 +63,27 @@ def load_residual() -> pd.DataFrame:
     if not RESIDUAL_PATH.exists():
         return pd.DataFrame()
     return pd.read_csv(RESIDUAL_PATH, dtype={"adm_cd": str, "admi_cd": str})
+
+
+@st.cache_data
+def load_analysis(key: str) -> pd.DataFrame:
+    """정적 분석 산출물을 읽는다. 없으면 빈 DataFrame (페이지에서 안내 후 중단)."""
+    path = PROCESSED / ANALYSIS_FILES[key]
+    if not path.exists():
+        return pd.DataFrame()
+    return pd.read_csv(path, dtype={"adm_cd": str, "admi_cd": str})
+
+
+def require_analysis(key: str, script: str) -> pd.DataFrame:
+    """분석 결과가 없으면 어떤 스크립트를 돌려야 하는지 알려주고 멈춘다."""
+    df = load_analysis(key)
+    if df.empty:
+        st.error(
+            f"`{ANALYSIS_FILES[key]}` 가 없습니다.\n\n"
+            f"먼저 `python -m src.analysis.{script}` 를 실행하세요."
+        )
+        st.stop()
+    return df
 
 
 @st.cache_data
@@ -109,6 +141,19 @@ def sidebar_filters(df: pd.DataFrame) -> dict:
     )
 
     return {"weekday": weekday, "timeslot": timeslot, "gu": gu, "exclude_zero": exclude_zero}
+
+
+def scope_phrase(f: dict) -> str:
+    """페이지 상단 리드 문장. 아래에 오는 결과를 이끄는 조건절 형태로 쓴다.
+
+    사이드바의 '선택: ...' 표시와는 목적이 다르다.
+    저쪽은 지금 무엇을 고른 상태인지 알리는 것이고, 이쪽은 결과로 이어지는 문장이다.
+    자치구를 고르면 '가면', 전체면 '보면'으로 받아 두 경우의 어투를 맞춘다.
+    """
+    when = f"{f['weekday']}요일 {TIMESLOT_LABEL[f['timeslot']]}"
+    if f["gu"] == "전체":
+        return f"{when}, 서울 전체를 보면"
+    return f"{f['gu']}에 {when}에 가면"
 
 
 def apply_filters(df: pd.DataFrame, f: dict, apply_gu: bool = True) -> pd.DataFrame:

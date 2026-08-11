@@ -7,13 +7,15 @@ import streamlit as st
 
 from common import (
     TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS,
-    apply_filters, page_header, require_data, sidebar_filters,
+    apply_filters, page_header, require_analysis, require_data, scope_phrase,
+    sidebar_filters,
 )
 
 st.set_page_config(page_title="코스 추천 | 서울 나들이 주차", page_icon="🎯", layout="wide")
 
 df = require_data()
 f = sidebar_filters(df)
+suit = require_analysis("suitability", "suitability")
 d = apply_filters(df, f, apply_gu=False).dropna(subset=["store_food"])
 
 page_header(
@@ -42,7 +44,7 @@ d.loc[(d.store_food < food_line) & (d.slots_per_1k >= park_line), "구분"] = "�
 
 COLORS = {"⭐ 추천": "#2CA02C", "혼잡 주의": "#D62728", "한산": "#7F9FBF", "그 외": "#D9D9D9"}
 
-st.markdown(f"#### {f['weekday']}요일 · {TIMESLOT_LABEL[f['timeslot']]}")
+st.markdown(f"#### {scope_phrase(f)}")
 
 k1, k2, k3 = st.columns(3)
 k1.metric("⭐ 추천 동네", f"{(d['구분'] == '⭐ 추천').sum()}개")
@@ -77,19 +79,29 @@ rec = d[d["구분"] == "⭐ 추천"].copy()
 if rec.empty:
     st.warning("기준을 만족하는 동네가 없습니다. 위 슬라이더를 완화해보세요.")
 else:
-    # 놀거리·주차 각각 백분위로 환산해 합산
-    rec["놀거리점수"] = rec.store_food.rank(pct=True) * 100
-    rec["주차점수"] = rec.slots_per_1k.rank(pct=True) * 100
-    rec["종합점수"] = (rec.놀거리점수 + rec.주차점수) / 2
+    # 순위는 대시보드에서 즉석 계산하지 않고 suitability.py가 만든 지수를 그대로 쓴다.
+    # 예전에는 (놀거리 백분위 + 주차 백분위)/2 라는 임의 가중치를 여기서 계산했는데,
+    # 기획서가 "임의 가중치가 아닌 PCA 기반"이라고 명시한 것과 어긋났고
+    # 필터를 바꿀 때마다 값이 흔들려 보고서 수치와도 맞지 않았다.
+    rec = rec.merge(
+        suit[["admi_cd", "나들이적합도", "매력도지수_pct", "주차여유지수_pct"]],
+        on="admi_cd", how="left")
 
-    show = ["sgg_nm", "admi_nm", "store_food", "slots_per_1k", "parking_slots", "living_pop", "종합점수"]
-    names = {"sgg_nm": "자치구", "admi_nm": "행정동", "store_food": "음식점수",
-             "slots_per_1k": "천명당주차면", "parking_slots": "공영주차면", "living_pop": "생활인구"}
+    show = ["sgg_nm", "admi_nm", "나들이적합도", "매력도지수_pct", "주차여유지수_pct",
+            "store_food", "parking_slots"]
+    names = {"sgg_nm": "자치구", "admi_nm": "행정동", "나들이적합도": "적합도",
+             "매력도지수_pct": "매력도", "주차여유지수_pct": "주차여유",
+             "store_food": "음식점수", "parking_slots": "공영주차면"}
     st.dataframe(
-        rec.nlargest(15, "종합점수")[show].rename(columns=names).style.format(
-            {"음식점수": "{:,.0f}", "천명당주차면": "{:.1f}", "공영주차면": "{:,.0f}",
-             "생활인구": "{:,.0f}", "종합점수": "{:.0f}"}),
+        rec.nlargest(15, "나들이적합도")[show].rename(columns=names).style.format(
+            {"적합도": "{:.1f}", "매력도": "{:.0f}", "주차여유": "{:.0f}",
+             "음식점수": "{:,.0f}", "공영주차면": "{:,.0f}"}),
         use_container_width=True, hide_index=True,
+    )
+    st.caption(
+        "**적합도**는 PCA로 뽑은 매력도 축(PC1 52.1%)과 주차 여유 축(PC2 39.2%)을 "
+        "백분위로 환산해 **기하평균**한 값입니다. 한쪽만 높으면 점수가 크게 떨어집니다 — "
+        "주차가 없으면 놀거리가 많아도 못 가고, 그 반대도 마찬가지이기 때문입니다."
     )
 
 st.divider()
@@ -99,7 +111,7 @@ st.subheader("⏰ 이 동네, 언제 가면 가장 여유로울까")
 
 # 자치구를 먼저 고르고 그 안의 행정동을 고른다 (424개를 한 줄에 늘어놓지 않기 위해)
 if not rec.empty:
-    top = rec.nlargest(1, "종합점수").iloc[0]
+    top = rec.nlargest(1, "나들이적합도").iloc[0]
     default_gu, default_dong = top.sgg_nm, top.admi_nm
 else:
     first = d.sort_values(["sgg_nm", "admi_nm"]).iloc[0]
