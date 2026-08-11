@@ -1,4 +1,4 @@
-"""주차장 주소를 지오코딩해 행정동을 배정한다 -> data/interim/parking_geocoded.csv
+"""주차장 주소를 지오코딩해 행정동을 배정한다 -> data/interim/parking_geocoded_{source}.csv
 
 왜 필요한가
 ----------

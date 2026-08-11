@@ -38,6 +38,141 @@
 
 ---
 
+
+**파일 아키텍처 (전체 구조)**
+
+```
+seoul-parking/
+├── config/config.yaml              시간대 4구간·회귀 임계값·상권 파일명 매핑
+├── .env / .env.example             API 키 4종
+│
+├── data/                           ※ .gitignore — 실제 데이터는 깃에 없고 스크립트로 재생성
+│   ├── raw/                        원본 (손대지 않음)
+│   │   ├── living_population/*.csv   56일치, 1파일 = 1일(424동 × 24시간)
+│   │   ├── parking_standard.csv      전국주차장 표준데이터(서울분) — 주(主)
+│   │   └── parking_seoul.csv         서울시 공영주차장 API — 보충
+│   ├── external/                   외부 참조 데이터
+│   │   ├── dong_boundary.geojson     SGIS 행정동 경계 426개
+│   │   ├── dong_crosswalk.csv        ← dong_code.py 산출
+│   │   ├── adm_code/SEOUL_ADMI/*.csv 43개월치 코드정보 (크로스워크의 다리)
+│   │   └── commercial/*.csv          점포·집객시설·상주인구·직장인구 (수동 다운로드)
+│   ├── interim/                    중간 가공물
+│   │   ├── parking_geocoded_standard.csv
+│   │   └── parking_geocoded_seoul.csv ← geocode_parking.py 산출 (geo_adm_cd 부여)
+│   └── processed/                  분석용 최종 테이블
+│       ├── panel.csv                 ★ 11,872행 = 424동 × 7요일 × 4시간대
+│       └── dong_residual.csv         ← residual.py 산출 (잔차·등급)
+│
+├── src/
+│   ├── collect/                    수집 (OpenAPI)
+│   │   ├── fetch_living_population.py / fetch_parking_standard.py
+│   │   ├── fetch_parking_seoul.py    / fetch_dong_boundary.py
+│   │   └── fetch_poi_kakao.py        (미사용 — 403, 교차검증용으로만 남김)
+│   ├── preprocess/                 ★ 가장 오래 걸린 단계
+│   │   ├── dong_code.py              코드 크로스워크 (7.5%→100%)
+│   │   ├── geocode_parking.py        주차장 행정동 배정 (100%)
+│   │   ├── load_commercial.py        상권 CSV 4종 로드 (인코딩 자동판별)
+│   │   ├── build_panel.py            집계·병합·파생·공휴일 제외 → panel.csv
+│   │   └── validate.py               자동 품질검증
+│   ├── analysis/
+│   │   ├── daily_trend.py            일별 추세·공휴일 검증
+│   │   ├── explore.py                상관 히트맵·자치구 분포
+│   │   └── residual.py               회귀 잔차 (핵심 결과물)
+│   └── utils/
+│       ├── settings.py               경로·config·env 로더
+│       ├── timeslot.py               요일/시간대 파생
+│       ├── holidays.py               공휴일 정의·판정
+│       ├── api_client.py / logger.py
+│
+├── dashboard/                      Streamlit 4페이지
+│   ├── app.py                        탐색 (KPI·시간대 곡선·자치구 여유도)
+│   ├── common.py                     사이드바 등 공통
+│   └── pages/  1_지도.py · 2_코스추천.py · 3_동네유형.py
+│
+├── docs/
+│   ├── data_sources.md / data_links.md / data_dictionary.md
+│   └── methodology.md                회귀 잔차 방법론 (로그변환 근거 등)
+│
+├── reports/
+│   ├── report.md                     ⬜ 목차 상태
+│   └── figures/*.png                 정적 그래프 5종
+│
+├── submission/                     제출용 (01_보고서 ~ 04_스크린샷)
+├── data/README.md                  ★ 데이터 전체 안내 (출처·흐름·처리·한계)
+├── README.md / PROGRESS.md
+└── 멘토링_브리핑.xlsx               사전질문·질문리스트·목표·그래프·핵심수치 5시트
+```
+
+**데이터 흐름 한 줄**
+`raw/` + `external/` → `dong_code.py`·`geocode_parking.py` → `interim/` → `build_panel.py` → `processed/panel.csv` → `validate.py` 검증 → `analysis/`가 읽어 그래프·잔차 산출
+
+---
+
+
+
+**데이터 실물 — 어디에 얼마나 있는가** (2026-08-11 실측)
+
+| 폴더 | 파일 수 | 용량 | 성격 |
+|---|---|---|---|
+| `data/raw/` | 59개 | **158.2MB** | API 원본. 절대 손대지 않음 |
+| `data/external/` | 52개 | 33.3MB | 외부에서 받은 참조 데이터 |
+| `data/interim/` | 3개 | 1.3MB | 중간 가공물 (지오코딩 결과) |
+| `data/processed/` | 3개 | 2.6MB | 분석용 최종 테이블 |
+
+| 파일 | 용량 | 행수 | 비고 |
+|---|---|---|---|
+| `raw/living_population/*.csv` | **157.1MB** | 56개 파일 × 10,176행 | 파일당 2.8MB. `20260602.csv` ~ `20260727.csv` |
+| `raw/parking_standard.csv` | 324KB | 856 | 주(主) 주차장 데이터 |
+| `raw/parking_seoul.csv` | 743KB | 2,189 | 보충용 |
+| `external/commercial/점포_행정동.csv` | **13.6MB** | 176,531 | 업종 100종 × 행정동이라 행이 많음 |
+| `external/commercial/상주인구_행정동.csv` | 1.7MB | 8,925 | |
+| `external/commercial/직장인구_행정동.csv` | 1.3MB | 8,694 | 414개 동만 제공(결측 사유) |
+| `external/commercial/집객시설_행정동.csv` | 886KB | 8,925 | |
+| `external/adm_code/SEOUL_ADMI/ADMI_*.csv` | 13.0MB | 43개 파일 | `ADMI_202301` ~ `ADMI_202607` |
+| `external/dong_boundary.geojson` | 1.0MB | 426 폴리곤 | |
+| `external/dong_crosswalk.csv` | 32KB | 426 | |
+| `interim/parking_geocoded_standard.csv` | 390KB | 856 | 원본 + `geo_*` 6컬럼 |
+| `interim/parking_geocoded_seoul.csv` | 897KB | 2,189 | 〃 (서울시 API분) |
+| `processed/panel.csv` | 2.5MB | **11,872** | ★ 최종 산출 |
+| `processed/dong_residual.csv` | 53KB | **358** | 0면 66개 동 제외된 수 |
+
+> ⚠️ `data/README.md`에는 생활인구가 "총 118MB"로 적혀 있으나 **실측 157.1MB**입니다. 수집 중 갱신 누락 — 문서 수정 필요.
+
+**왜 파일명을 이렇게 지었나**
+
+| 규칙 | 예시 | 이유 |
+|---|---|---|
+| **`data/`를 4단계로 분리** | `raw` / `external` / `interim` / `processed` | Cookiecutter Data Science 관례. **"원본은 절대 덮어쓰지 않는다"** 를 폴더 구조로 강제하기 위함. 재현 시 어디부터 다시 돌릴지가 폴더만 봐도 결정됨 |
+| **날짜 자체가 파일명** | `living_population/20260602.csv` | 파일명 = 기본키(수집일). ① 정렬하면 시간순 ② `out_path.exists()` 로 **이미 받은 날은 건너뛰어** 중단 후 이어받기 가능(멱등) ③ `glob('*.csv')` 만으로 전체 로드 |
+| **접미사 = 출처** | `parking_standard` / `parking_seoul` | 주차장 데이터가 2종이고 **성격이 달라**(표준=거주자우선 제외, 서울시=포함) 파일명에서 바로 구분되어야 함. `geocode_parking.py`의 `SOURCES` 딕셔너리 키·`--source` 인자값과 **같은 단어**로 통일 |
+| **가공 단계를 이름에 명시** | `parking_geocoded_standard.csv` | `parking_standard`(원본) → `parking_geocoded_standard`(지오코딩 후). 원본과 나란히 놓아도 어느 단계인지 구분됨 |
+| **상권 CSV는 한글 원본명 유지** | `점포_행정동.csv` | 수동 다운로드라 **사이트에서 받은 이름 그대로** 두어야 재다운로드 시 헷갈리지 않음. `-행정동`(OA-22xxx)과 `-상권`(OA-15xxx)은 공간단위가 달라 **접미사가 곧 경고 역할**. 실제 경로는 `config.yaml`의 `commercial.files`가 관리 |
+| **코드표는 `ADMI_YYYYMM`** | `ADMI_202301.csv` | 배포처 원본명. 43개월분을 **전부 합쳐 써야** 함 — 통폐합으로 특정 월에만 존재하는 코드가 있어서(용신동·일원2동) |
+| **경로 상수를 코드에 하드코딩 안 함** | `settings.py`의 `DATA_RAW` 등 | 모든 모듈이 `from src.utils.settings import DATA_RAW` 로 동일 경로 사용. 폴더를 옮겨도 한 곳만 고치면 됨 |
+| **데이터는 깃에 안 올림** | `.gitignore`: `data/*/*` + `!.gitkeep` | 158MB라 저장소에 부적합. **`.gitkeep`만 남겨 폴더 구조는 보존** → 클론 후 스크립트만 돌리면 재생성 |
+
+
+---
+
+
+****전처리 어떻게 했냐"고 물었을 때 열 파일을 우선순위로 정리했습니다.**
+
+| 순서 | 파일 | 여기서 답하는 것 |
+|---|---|---|
+| 1 | `data/README.md` §5 | **먼저 말할 한 장 요약.** 핵심 처리는 ① 코드 크로스워크 ② 주차장 지오코딩 두 가지 |
+| 2 | `src/preprocess/dong_code.py` | 코드 체계 불일치 해결 (조인율 7.5%→100%). 예외처리 3종이 전부 여기 — `normalize_dong_name`(가운뎃점 표기), `resolve_legacy_codes`(구버전 코드 순서매칭), `SPLIT_DONGS`(상일동 1:2 분할) |
+| 3 | `src/preprocess/geocode_parking.py` | 주차장에 행정동이 없어 주소로 배정. 좌표 결측(표준 5.7%·서울시 33.5%) 때문에 공간조인 대신 SGIS 지오코딩 → 배정률 100% |
+| 4 | `src/preprocess/build_panel.py` | 집계·병합·파생변수(`slots_per_1k`), **공휴일 2일 제외**(변동계수 수 2.01%→0.19%) |
+| 5 | `src/preprocess/validate.py` | "품질 검증했냐" 대응. 구조/중복/논리/결측/이상치 5종. 이상치를 안 지운 이유도 여기 |
+| 6 | `docs/methodology.md` §3 | "왜 로그변환?" 대응. 원단위 vs 로그-로그 왜도·등분산 비교표 |
+| 7 | `멘토링_브리핑.xlsx` `5_핵심수치` | 숫자가 바로 안 나올 때 화면 공유용 |
+
+> `load_commercial.py`는 상권 CSV 읽기(인코딩 자동판별)까지만 하고 병합은 `build_panel.py`가 합니다.
+> 파일 안에 TODO가 남아 있으니 질문 나오면 이렇게 답할 것.
+
+---
+
+
 ## Day 1 — 2026-08-10 (월)
 
 ### ✅ 한 작업
@@ -212,13 +347,54 @@
 ## Day 2 — 2026-08-11 (화)
 
 ### ✅ 한 작업
--
 
 ### 🔧 트러블슈팅
--
+
+**⑫ 지오코딩 산출 파일명 불일치 — 클린 환경에서 재현 실패** ✅ 수정 완료
+
+- 증상: `geocode_parking.py:240` 은 `parking_geocoded_{source}.csv` 로 저장 → `--source seoul` 이면
+  **`parking_geocoded_seoul.csv`** 인데, `build_panel.py:128` 은 **`parking_geocoded.csv`**(접미사 없음)를 읽고 있었음
+- 그동안 `interim/` 에 접미사 없는 옛 파일이 남아 있어 **우연히 동작**하고 있었음
+- 영향: 클린 환경에서 README 재현 절차대로 돌리면 보충 파일을 못 찾아
+  `"서울시 공영주차장 지오코딩 결과가 없어 보충을 건너뜁니다"` 경고와 함께
+  **43개 동 보충분이 통째로 누락** → 78,267면 → 73,796면, 0면 동 66 → 109개
+- **조치 3가지**
+  1. `data/interim/parking_geocoded.csv` → **`parking_geocoded_seoul.csv`** 로 이름 변경 (내용 확인 후: `OPER_SE_NM`·`TPKCT` 보유 = 서울시 API분 맞음)
+  2. `build_panel.py:128` 경로를 `parking_geocoded_seoul.csv` 로 수정
+  3. `geocode_parking.py` docstring의 옛 경로도 `parking_geocoded_{source}.csv` 로 정정
+- **검증**: `build_panel` 재실행 후 이전 `panel.csv` 와 대조 → `assert_frame_equal` **완전 동일**
+  (11,872행 × 22열 / 78,267면 / source 분포 standard 315·seoul_api 43·none 66 모두 일치)
+  `validate.py` 전 항목 통과 (exit 0)
+
+> 교훈: 산출 경로를 f-string으로 만드는 쪽과 읽는 쪽이 **문자열로 따로 적혀 있으면** 어긋나도 즉시 드러나지 않는다.
+> 옛 산출물이 남아 있어 로컬에서만 통과하는 형태라 **커밋 전까지 발견이 어려웠음.**
 
 ### 📌 남은 작업
--
+
+**[보고서·발표자료] 주거지수를 정식 지표로 넣을 것**
+
+```
+주거지수 = 상주인구 ÷ (상주인구 + 직장인구)
+  1에 가까움 → 주거지 (사는 사람만, 일하러 오는 사람 없음)
+  0에 가까움 → 업무지구
+```
+
+| 동네 | 주거지수 | 성격 |
+|---|---|---|
+| 정릉3동 | 0.98 | 완전 주거지 |
+| 대학동 | 0.98 | 〃 |
+| **논현2동** | **0.26** | 업무지구 (414개 중 396위) |
+
+**왜 넣어야 하나** — 반드시 나올 반론을 막는 지표이기 때문.
+
+> "공영주차 부족한 동네들, 그냥 주거지라서 그런 거 아닌가요? 아파트 주차장 있잖아요."
+
+논현2동은 주거지수 0.26 · 직장인구 서울 평균 **5.62배** · 음식점 3.28배로 주거지가 아님.
+그런데도 4.4만 명에 13면 → **주거지 가설로 설명 안 되는 진짜 주차난**임을 보이는 근거.
+
+- 근거 위치: `docs/methodology.md` §5 (교란요인 검증, 주거지수 ↔ 표준화 잔차 r=-0.063 p=0.24 → 무관)
+- 할 일: 위 표를 보고서 본문과 발표 슬라이드에 **정적 표/그림으로** 삽입
+- 공급부족 56개 동을 주거지수로 3분류해 제시 (주거지형 / 업무·상권형 / 관광·대학형)
 
 ---
 

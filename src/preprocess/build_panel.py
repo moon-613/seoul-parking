@@ -125,7 +125,7 @@ def _build_parking_seoul() -> pd.DataFrame:
 
     거주자우선·버스전용은 방문객이 쓸 수 없으므로 제외한다.
     """
-    path = DATA_INTERIM / "parking_geocoded.csv"
+    path = DATA_INTERIM / "parking_geocoded_seoul.csv"
     if not path.exists():
         logger.warning("서울시 공영주차장 지오코딩 결과가 없어 보충을 건너뜁니다.")
         return pd.DataFrame(columns=["adm_cd", "parking_slots", "parking_lots", "avg_fee_per_hour"])
