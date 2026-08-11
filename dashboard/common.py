@@ -17,14 +17,18 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# src 모듈은 위에서 sys.path를 잡은 뒤에야 임포트할 수 있다
+from src.utils.timeslot import get_timeslots, get_weekday_names  # noqa: E402
+
 PANEL_PATH = ROOT / "data" / "processed" / "panel.csv"
 RESIDUAL_PATH = ROOT / "data" / "processed" / "dong_residual.csv"
 BOUNDARY_PATH = ROOT / "data" / "external" / "dong_boundary.geojson"
 
-WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
-TIMESLOTS = ["아침", "점심", "오후", "저녁밤"]
-TIMESLOT_LABEL = {"아침": "아침 06-11시", "점심": "점심 11-14시",
-                  "오후": "오후 14-18시", "저녁밤": "저녁밤 18-24시"}
+# 요일·시간대 정의는 config/config.yaml 한 곳에서만 관리한다.
+# 예전에는 여기에 값이 따로 박혀 있어 구간 설계를 바꾸면 대시보드가 어긋났다.
+WEEKDAYS = get_weekday_names()
+TIMESLOTS = [s["name"] for s in get_timeslots()]
+TIMESLOT_LABEL = {s["name"]: f'{s["name"]} {s["label"]}' for s in get_timeslots()}
 
 # 공영주차 여유도 색상 (낮음=빨강, 높음=파랑)
 SCALE_SUPPLY = "RdYlBu"

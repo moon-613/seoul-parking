@@ -29,6 +29,7 @@ import pandas as pd
 
 from src.utils.logger import get_logger
 from src.utils.settings import DATA_EXTERNAL, DATA_INTERIM, DATA_PROCESSED, DATA_RAW
+from src.utils.timeslot import get_weekday_names, timeslot_order
 
 logger = get_logger(__name__)
 
@@ -142,8 +143,11 @@ def validate_panel(rep: Report) -> pd.DataFrame:
 
     # 구조
     key = ["admi_cd", "weekday", "timeslot"]
-    expected = p["admi_cd"].nunique() * 7 * 4
-    rep.check(len(p) == expected, "패널 키 조합 완전성", f"{len(p):,} vs 기대 {expected:,}")
+    # 요일·시간대 개수는 config에서 읽는다 (구간 설계를 바꿔도 검증이 따라오도록)
+    n_wd, n_ts = len(get_weekday_names()), len(timeslot_order())
+    expected = p["admi_cd"].nunique() * n_wd * n_ts
+    rep.check(len(p) == expected, "패널 키 조합 완전성",
+              f"{len(p):,} vs 기대 {expected:,} (동 {p['admi_cd'].nunique()} × 요일 {n_wd} × 시간대 {n_ts})")
     rep.check(p.duplicated(key).sum() == 0, "키 중복 없음", f"{p.duplicated(key).sum()}건")
     rep.check(p.duplicated().sum() == 0, "완전 중복 없음", f"{p.duplicated().sum()}건")
 
