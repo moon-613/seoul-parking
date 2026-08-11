@@ -36,6 +36,36 @@ def pick_korean_font() -> str | None:
     return None
 
 
+def annotate_spread(ax, points, *, fontsize=8, color=None, max_shift=5):
+    """겹치지 않게 점 라벨을 붙인다. points = [(x, y, text), ...]
+
+    왜 필요한가
+    ----------
+    잔차 하위 동네들은 좌표가 거의 같다(주차면 1~5면 · 생활인구도 비슷).
+    그대로 annotate 하면 이름이 서로 포개져 한 덩어리로 뭉개진다.
+
+    방법: 후보 오프셋을 순서대로 시도해 이미 놓인 라벨과 화면 좌표에서
+    겹치지 않는 첫 자리에 놓는다. 끝까지 자리가 없으면 그 라벨은 건너뛴다
+    (겹쳐서 둘 다 못 읽느니 하나만 읽히는 편이 낫다).
+    """
+    ax.figure.canvas.draw()
+    placed = []
+    # (dx, dy) 후보 — 오른쪽 위부터 시계 방향으로 벌려 나간다
+    offsets = [(5, 4), (5, -10), (-5, 4), (-5, -10), (5, 14), (5, -20), (-5, 14), (-5, -20)]
+
+    for x, y, text in points:
+        for dx, dy in offsets[:max_shift + 3]:
+            ann = ax.annotate(text, (x, y), fontsize=fontsize, color=color,
+                              xytext=(dx, dy), textcoords="offset points",
+                              ha="left" if dx > 0 else "right")
+            ax.figure.canvas.draw()
+            bb = ann.get_window_extent()
+            if not any(bb.overlaps(p) for p in placed):
+                placed.append(bb)
+                break
+            ann.remove()
+
+
 def use_korean_font() -> str | None:
     """matplotlib 전역 설정에 한글 폰트를 적용한다.
 

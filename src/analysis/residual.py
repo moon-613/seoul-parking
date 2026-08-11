@@ -38,7 +38,7 @@ import pandas as pd
 from scipy import stats
 
 from src.utils.logger import get_logger
-from src.utils.plotstyle import use_korean_font
+from src.utils.plotstyle import annotate_spread, use_korean_font
 from src.utils.settings import DATA_PROCESSED, ROOT_DIR, get_config
 
 logger = get_logger(__name__)
@@ -149,9 +149,9 @@ def plot(d: pd.DataFrame, stat: dict) -> None:
                    s=18, alpha=0.75, label=g, color=colors[g])
     xs = np.linspace(x.min(), x.max(), 50)
     ax.plot(xs, np.polyval(np.polyfit(x, y, 1), xs), "k--", lw=1.2, label="기대선(회귀)")
-    for _, r in pd.concat([d.nsmallest(4, "z_residual"), d.nlargest(4, "z_residual")]).iterrows():
-        ax.annotate(r.admi_nm, (np.log1p(r.living_pop), np.log1p(r.parking_slots)),
-                    fontsize=8, alpha=0.85)
+    label_src = pd.concat([d.nsmallest(4, "z_residual"), d.nlargest(4, "z_residual")])
+    annotate_spread(ax, [(np.log1p(r.living_pop), np.log1p(r.parking_slots), r.admi_nm)
+                         for _, r in label_src.iterrows()])
     ax.set_xlabel("log(생활인구)"); ax.set_ylabel("log(공영주차면)")
     ax.set_title(f"공영주차 공급 vs 생활인구  (R²={stat['r2']:.3f}, n={len(d)})")
     ax.legend(fontsize=9); ax.grid(alpha=0.3)
