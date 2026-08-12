@@ -36,6 +36,9 @@ from src.utils.settings import DATA_PROCESSED, ROOT_DIR
 logger = get_logger(__name__)
 
 OUT = ROOT_DIR / "reports" / "figures" / "deck"
+# --transparent 로 켜면 배경을 투명하게 저장한다.
+# 슬라이드 배경색이 흰색이 아니거나 직접 PPT를 만들 때 그림이 흰 사각형으로 얹히지 않는다.
+TRANSPARENT = False
 use_korean_font()
 
 # 슬라이드 그림 자리 비율 (16:9 슬라이드의 본문 영역)
@@ -68,9 +71,11 @@ plt.rcParams.update({
 def save(fig, name: str) -> None:
     OUT.mkdir(parents=True, exist_ok=True)
     fig.tight_layout()
-    fig.savefig(OUT / f"{name}.png", dpi=DPI, bbox_inches="tight", facecolor="white")
+    fig.savefig(OUT / f"{name}.png", dpi=DPI, bbox_inches="tight",
+                facecolor="none" if TRANSPARENT else "white",
+                transparent=TRANSPARENT)
     plt.close(fig)
-    logger.info(f"저장: deck/{name}.png")
+    logger.info(f"저장: {OUT.name}/{name}.png")
 
 
 def load(name: str) -> pd.DataFrame:
@@ -187,11 +192,14 @@ def fig_cluster_pattern() -> None:
     ax.set_xticks([i * 5 + 2 for i in range(7)], ["월", "화", "수", "목", "금", "토", "일"])
     for i in range(1, 7):
         ax.axvline(i * 5 - 0.5, color="#dddcd6", lw=1)
-    # 주말은 배경으로 구분 — 상권형이 뒤집히는 구간이라 눈이 먼저 가야 한다
-    ax.axvspan(24.5, len(prof) - 0.5, color="#f4f3ef", zorder=0)
+    # 주말 구간 표시. 예전에는 배경을 회색으로 칠했는데, 투명 배경으로 저장하면
+    # 거기만 불투명한 사각형으로 남는다. 경계선과 라벨로 대신한다
+    ax.axvline(24.5, color=MUTED, lw=1.6)
+    ax.text((24.5 + len(prof) - 0.5) / 2, ax.get_ylim()[1] * 0.995, "주말",
+            ha="center", va="top", fontsize=12, color=MUTED, fontweight="bold")
     ax.set_ylabel("주차 여유 지수\n(유형 내 평균 = 100)")
     ax.set_xlabel("요일 안에서는 오전 → 점심 → 오후 → 저녁 → 밤 순", fontsize=11, color=MUTED)
-    ax.legend(fontsize=11, loc="upper left")
+    ax.legend(fontsize=11, loc="upper left", frameon=False)
     ax.grid(axis="y", alpha=0.25)
     save(fig, "03_cluster_pattern")
 
@@ -251,7 +259,7 @@ def fig_recommend() -> None:
                         xytext=(dx, dy), fontsize=11, fontweight="bold", color=ALERT_STRONG)
     ax.set_xlabel("매력도 백분위 (음식점·카페·집객시설)")
     ax.set_ylabel("주차 여유\n(표준화 잔차)")
-    ax.legend(fontsize=11, loc="upper left", framealpha=0.9)
+    ax.legend(fontsize=11, loc="upper left", frameon=False)
     ax.grid(alpha=0.25)
     save(fig, "05_recommend")
 
@@ -341,6 +349,21 @@ def fig_eda_corr() -> None:
     save(fig, "08_eda_corr")
 
 
+def _cli() -> None:
+    """저장 위치와 배경 투명 여부를 인자로 받는다."""
+    global OUT, TRANSPARENT
+    import argparse
+    from pathlib import Path
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--transparent", action="store_true", help="배경을 투명하게 저장")
+    ap.add_argument("--out", help="저장 폴더 (기본 reports/figures/deck)")
+    a = ap.parse_args()
+    TRANSPARENT = a.transparent
+    if a.out:
+        OUT = Path(a.out)
+    logger.info(f"저장 위치 {OUT} · 배경 {'투명' if TRANSPARENT else '흰색'}")
+
+
 def main() -> None:
     fig_eda_corr()
     fig_core_result()
@@ -354,4 +377,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    _cli()
     main()
