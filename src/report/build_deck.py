@@ -297,6 +297,44 @@ def s_divider(prs, n, no, title):
 
 
 # ── I. 분석 배경 및 목표 ───────────────────────────────────────
+def s_scope(prs, n):
+    """발표가이드가 첫 1분에 요구하는 '주제·목적·핵심 질문'을 한 장에 담는다.
+
+    목적은 '왜 하는가'(두 사용자별), 목표는 '무엇을 만들어 내는가'를
+    **숫자로 확인 가능한 형태**로 적는다. 뒤 슬라이드가 이 숫자를 하나씩 채운다.
+    """
+    s = _content(prs, n, "분석 배경 및 목표", "주제 · 목적 · 목표")
+
+    def row(y, label, runs, *, size=15):
+        _pill(s, M_LEFT, y + 0.02, label, size=12.5, w=0.95)
+        _write(_tf(s, M_LEFT + 1.2, y - 0.04, 10.9, 1.8), runs, size=size, space=6)
+
+    row(2.15, "주제",
+        [[("서울 424개 행정동의 공영주차 수급을 ", {"size": 18}),
+          ("생활인구·거주형태", {"size": 18, "bold": True, "color": BLUE}),
+          ("로 진단하고", {"size": 18})],
+         [("확충 우선순위를 도출한다", {"size": 18})]])
+
+    row(3.35, "목적",
+        [[("나들이객 ", {"color": MUTED}),
+          ("목적지를 정하기 이전 단계의 의사결정을 돕는다", {"color": INK})],
+         [("정책 담당 ", {"color": MUTED}),
+          ("확충 우선순위를 판단할 정량 근거를 만든다", {"color": INK})]])
+
+    row(4.55, "목표",
+        [[("행정동 424 × 요일 7 × 시간대 5 = ", {}),
+          ("14,840행 패널", {"bold": True, "color": INK}), (" 구축", {})],
+         [("검증 가설 ", {}), ("6개", {"bold": True, "color": INK}),
+          (" — 유동수요·정주수요 양쪽으로 공급을 설명해 본다", {})],
+         [("추천 동네 ", {}), ("23개", {"bold": True, "color": INK}),
+          (" · 확충 후보 ", {}), ("52개", {"bold": True, "color": INK}),
+          (" · 확충 불필요 ", {}), ("13개", {"bold": True, "color": INK}), (" 도출", {})],
+         [("두 사용자가 각자 쓰는 ", {}),
+          ("대시보드 5페이지", {"bold": True, "color": INK})]])
+
+    _note(s, "핵심 질문 — \"공영주차장은 사람이 오는 곳에 있는가?\"", y=6.6)
+
+
 def s_problem(prs, n):
     s = _content(prs, n, "분석 배경 및 목표", "문제 정의",
                  sub="기존 서비스는 목적지가 이미 정해진 사람만 돕고, 행정에는 확충 우선순위를 판단할 근거가 없다")
@@ -667,7 +705,7 @@ def main() -> None:
     plan = [
         (s_cover, None), (s_agenda, None),
         (s_divider, ("01", "분석 배경 및 목표")),
-        (s_problem, None), (s_hypotheses, None), (s_pipeline, None),
+        (s_scope, None), (s_problem, None), (s_hypotheses, None), (s_pipeline, None),
         (s_divider, ("02", "활용 데이터")),
         (s_data, None), (s_join, None), (s_timeslot_design, None),
         (s_divider, ("03", "분석 결과")),
