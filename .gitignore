@@ -35,6 +35,12 @@ data/external/*
 reports/figures/*
 !reports/figures/.gitkeep
 
+## 발표자료 — 용량이 크고 생성물이라 저장소에 두지 않는다
+#   분석보고서_문지영.pptx / .pdf : src/report/build_deck.py 로 재생성
+#   예시 덱·발표가이드            : 외부에서 받은 참고자료
+submission/02_발표자료/*
+!submission/02_발표자료/.gitkeep
+
 ## OS / editor
 .DS_Store
 Thumbs.db
