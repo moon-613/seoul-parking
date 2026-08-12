@@ -27,6 +27,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from scipy import stats
 
 from src.utils.logger import get_logger
 from src.utils.plotstyle import use_korean_font
@@ -80,43 +81,62 @@ def load(name: str) -> pd.DataFrame:
 def fig_core_result() -> None:
     """발표 전체에서 가장 중요한 한 장. 산점도 둘을 나란히 놓고 R²를 크게 박는다."""
     # 거주형태는 panel.csv에 이미 붙어 있다 (build_panel이 총조사를 결합)
+    #
+    # 표본을 real_demand.py와 **똑같이** 잡는다. 그러지 않으면 그림에 찍힌 점과
+    # 라벨의 R²가 서로 다른 집단의 값이 되어 슬라이드가 스스로 어긋난다.
+    #   유동수요  주차장 있는 358개 전체
+    #   정주수요  그중 비아파트 100가구 이상(=확충 검토대상)만
+    #             비아파트 1~7가구짜리를 넣으면 실수요 비교라는 의미가 흐려진다
+    MIN_NONAPT = 100
     panel = load("panel.csv")
-    d = panel[(panel.weekday == "토") & (panel.timeslot == "오후") & panel.has_parking]
-    d = d[(d.non_apt_households > 0) & (d.parking_slots > 0)].dropna(
+    base = panel[(panel.weekday == "토") & (panel.timeslot == "오후")].dropna(
         subset=["non_apt_households", "living_pop", "parking_slots"])
+    flow = base[base.has_parking]
+    res = flow[flow.non_apt_households >= MIN_NONAPT]
 
     fig, axes = plt.subplots(1, 2, figsize=FIGSIZE)
     specs = [
-        (d.living_pop, "유동수요 — 생활인구(명)", 0.068, ACCENT),
-        (d.non_apt_households, "정주수요 — 비아파트 가구(호)", 0.004, ALERT),
+        (flow, flow.living_pop, "유동수요 — 생활인구(명)", ACCENT),
+        (res, res.non_apt_households, "정주수요 — 비아파트 가구(호)", ALERT),
     ]
-    for ax, (x, xlabel, r2, color) in zip(axes, specs):
-        lx, ly = np.log1p(x), np.log1p(d.parking_slots)
+    for ax, (sub, x, xlabel, color) in zip(axes, specs):
+        lx, ly = np.log1p(x), np.log1p(sub.parking_slots)
         ax.scatter(lx, ly, s=14, alpha=0.5, color=color, edgecolor="none")
-        b = np.polyfit(lx, ly, 1)
+        lr = stats.linregress(lx, ly)
         xs = np.linspace(lx.min(), lx.max(), 50)
-        ax.plot(xs, np.polyval(b, xs), "--", lw=2, color=INK)
-        # 회귀선이 거의 평평하다는 것이 결론이므로 R²를 그림 안에 크게 둔다
-        ax.text(0.04, 0.93, f"R² = {r2:.3f}", transform=ax.transAxes,
+        ax.plot(xs, lr.intercept + lr.slope * xs, "--", lw=2, color=INK)
+        # 회귀선이 거의 평평하다는 것이 결론이므로 R²를 그림 안에 크게 둔다.
+        # 값은 박아두지 않고 그린 데이터에서 바로 계산한다
+        ax.text(0.04, 0.93, f"R² = {lr.rvalue ** 2:.3f}", transform=ax.transAxes,
                 fontsize=20, fontweight="bold", color=color, va="top")
+        ax.text(0.04, 0.80, f"n = {len(sub)}", transform=ax.transAxes,
+                fontsize=12, color=MUTED, va="top")
         ax.set_xlabel(f"log  {xlabel}")
         ax.grid(alpha=0.25)
     axes[0].set_ylabel("log  공영주차면")
     save(fig, "01_core_result")
+    logger.info(f"  핵심결과 R² 유동 {stats.linregress(np.log1p(flow.living_pop), np.log1p(flow.parking_slots)).rvalue**2:.3f}"
+                f" / 정주 {stats.linregress(np.log1p(res.non_apt_households), np.log1p(res.parking_slots)).rvalue**2:.3f}")
 
 
 # ─────────────────────────────────────────────────────────────
 # 9번 슬라이드 — 가설 1·3 기각
 # ─────────────────────────────────────────────────────────────
 def fig_hypothesis_13() -> None:
-    """상관계수 4개를 막대 하나로. 히트맵보다 '거의 0'이 바로 보인다."""
-    items = [
-        ("생활인구 ↔ 천명당 주차면", -0.138),
-        ("20~30대 비중 ↔ 천명당 주차면", -0.116),
-        ("음식점 수 ↔ 천명당 주차면", -0.022),
-    ]
-    labels = [k for k, _ in items]
-    vals = [v for _, v in items]
+    """상관계수를 막대 하나로. 히트맵보다 '거의 0'이 바로 보인다.
+
+    값은 박아두지 않고 explore.py와 같은 조건(토·오후, 0면 동 제외)으로 직접 계산한다.
+    """
+    panel = load("panel.csv")
+    d = panel[(panel.weekday == "토") & (panel.timeslot == "오후") & panel.has_parking]
+    specs = [("생활인구 ↔ 천명당 주차면", "living_pop"),
+             ("20~30대 비중 ↔ 천명당 주차면", "young_ratio"),
+             ("음식점 수 ↔ 천명당 주차면", "store_food")]
+    labels, vals = [], []
+    for label, col in specs:
+        ok = d.dropna(subset=[col, "slots_per_1k"])
+        labels.append(label)
+        vals.append(stats.pearsonr(ok[col], ok.slots_per_1k)[0])
 
     fig, ax = plt.subplots(figsize=(11.5, 3.4))
     colors = [ACCENT if abs(v) >= 0.1 else NEUTRAL for v in vals]
