@@ -40,7 +40,9 @@ use_korean_font()
 
 # 슬라이드 그림 자리 비율 (16:9 슬라이드의 본문 영역)
 FIGSIZE = (11.5, 4.3)
-DPI = 200
+# 300dpi — 슬라이드를 큰 화면에 띄우거나 PDF로 확대해도 글자가 뭉개지지 않는다.
+# 200dpi로는 정사각형에 가까운 그림(상관 히트맵)이 특히 흐릿했다.
+DPI = 300
 
 # 색 — 대시보드(common.py)와 같은 역할 배정을 쓴다
 ALERT = "#d03b3b"
@@ -322,7 +324,7 @@ def fig_eda_corr() -> None:
     sub = d[list(cols)].rename(columns=cols).dropna()
     r = sub.corr()
 
-    fig, ax = plt.subplots(figsize=(7.6, 4.3))
+    fig, ax = plt.subplots(figsize=(9.0, 5.1))
     im = ax.imshow(r, cmap="RdBu_r", vmin=-1, vmax=1)
     ax.set_xticks(range(len(r)), r.columns, rotation=30, ha="right", fontsize=11)
     ax.set_yticks(range(len(r)), r.index, fontsize=11)
