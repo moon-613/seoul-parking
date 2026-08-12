@@ -299,20 +299,27 @@ def s_divider(prs, n, no, title):
 # ── I. 분석 배경 및 목표 ───────────────────────────────────────
 def s_problem(prs, n):
     s = _content(prs, n, "분석 배경 및 목표", "문제 정의",
-                 sub="주차 정보 서비스는 이미 목적지가 정해진 사람을 위한 것이다")
+                 sub="기존 서비스는 목적지가 이미 정해진 사람만 돕고, 행정에는 확충 우선순위를 판단할 근거가 없다")
     _pill(s, M_LEFT, 2.35, "기존 서비스", fill=RGBColor(0x6B, 0x6B, 0x6B), size=13)
     _write(_tf(s, M_LEFT, 2.85, 5.3, 1.2),
            [[("모두의주차장 · 서울주차정보", {"size": 15, "color": INK})],
             [("\"강남역 근처 주차장 어디?\"", {"size": 17, "bold": True, "color": BODY})]],
            space=5)
-    _pill(s, 7.0, 2.35, "이 분석이 답하는 것", fill=BLUE, size=13)
-    _write(_tf(s, 7.0, 2.85, 5.3, 1.2),
-           [[("목적지를 정하기 이전 단계", {"size": 15, "color": INK})],
-            [("\"어디로 갈까? 언제 갈까?\"", {"size": 17, "bold": True, "color": BLUE})]],
+    # 오른쪽 칸에 두 사용자의 질문을 나란히 둔다.
+    # 예전에는 나들이객의 질문만 있어 부 사용자가 아래 표에서 갑자기 나왔다.
+    _pill(s, 7.0, 2.35, "이 분석이 답하는 것 — 두 사용자", fill=BLUE, size=13)
+    _write(_tf(s, 7.0, 2.85, 5.6, 1.3),
+           [[("나들이객 ", {"size": 13, "color": MUTED}),
+             ("\"어디로 갈까? 언제 갈까?\"", {"size": 16, "bold": True, "color": BLUE})],
+            [("정책 담당 ", {"size": 13, "color": MUTED}),
+             ("\"어디에 지어야 하나?\"", {"size": 16, "bold": True, "color": BLUE})]],
            space=5)
     _hairline(s, 4.3)
     _write(_tf(s, M_LEFT, 4.5, 11.5, 0.5),
-           [("두 사용자가 같은 분석의 양쪽 끝을 쓴다", {"size": 18, "bold": True, "color": INK})],
+           [[("두 사용자가 ", {"size": 18, "bold": True, "color": INK}),
+             ("같은 분석의 양쪽 끝", {"size": 18, "bold": True, "color": BLUE}),
+             ("을 쓴다 — 공급이 여유로운 쪽은 \"여기로 가세요\", 부족한 쪽은 \"여기에 지으세요\"",
+              {"size": 14, "color": BODY})]],
            space=0)
     _table(s, [
         ["", "묻는 것", "받는 것"],
