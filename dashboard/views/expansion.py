@@ -17,14 +17,13 @@ import streamlit as st
 from common import ACCENT, ALERT, SCALE_SEQ, page_header, require_analysis, require_data
 
 require_data()
-rd = require_analysis("real_demand")
-# 순위는 잔차가 아니라 직접 지표로 낸다.
+# 순위는 잔차가 아니라 직접 지표(slots_per_100_nonapt)로 낸다.
 # 잔차는 생활인구/비아파트 가구로 기대 공급을 보정한 값인데 설명력이 R²=0.004로 낮아
 # 보정이 거의 일어나지 않는다(잔차 순위 ↔ 주차면수 순위 상관 0.997).
 # 담당자에게는 "6,838가구에 1면"처럼 바로 읽히는 값이 정확하다.
-rd = rd.merge(
-    require_data()[["admi_cd", "slots_per_100_nonapt"]].drop_duplicates(),
-    on="admi_cd", how="left")
+# 이 컬럼은 real_demand.py 가 이미 산출물에 넣어 주므로 패널에서 다시 붙이지 않는다.
+# (붙이면 이름이 겹쳐 _x/_y 로 쪼개지고 아래 nsmallest 가 KeyError 로 죽는다)
+rd = require_analysis("real_demand")
 sgg = require_analysis("sgg")
 
 page_header(
