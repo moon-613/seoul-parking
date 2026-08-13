@@ -6,3 +6,4 @@ pandas>=2.2
 numpy>=1.26
 plotly>=6.0
 scikit-learn>=1.4
+PyYAML>=6.0            # src/utils/settings.py 가 config/*.yaml 로드
