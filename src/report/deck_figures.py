@@ -356,6 +356,298 @@ def fig_eda_corr() -> None:
     save(fig, "08_eda_corr")
 
 
+# ─────────────────────────────────────────────────────────────
+# EDA 슬라이드 — 무엇을 1번째로 보고 5번째로 봤는가 (순서 + 히트맵)
+# ─────────────────────────────────────────────────────────────
+# 모의 발표에서 "다섯 단계를 말하는데 화면엔 히트맵만 있어 눈 둘 곳이 없다"는
+# 지적을 받았다. 히트맵은 다섯 번째 단계일 뿐인데 슬라이드가 그것만 보여준다.
+# 그래서 왼쪽에 다섯 단계를, 오른쪽에 그 마지막 단계의 산출물을 나란히 둔다.
+# 발표자는 왼쪽을 위에서 아래로 짚어 내려오다가 ⑤에서 오른쪽으로 넘어간다.
+EDA_STEPS = [
+    ("결측 · 이상치", "서교동 117,158명은 오류가 아니라 실제 번화가",
+     "이상치를 지우지 않고 Z-score 표준화"),
+    ("날짜축 56일", "평일인데 인구가 떨어진 2일 = 공휴일",
+     "공휴일 제외 · 변동계수 2.01% → 0.19%"),
+    ("요일 × 시간대", "을지로동 일요일 06시 30 / 11시 86 / 13시 100",
+     "한 구간 안 3배 차이 → 시간대 6구간 재설계"),
+    ("자치구 분포", "천명당 주차면 중앙값 금천 19.0 ↔ 노원 2.8",
+     "0면 동 109개 발견 → API 보충으로 66개"),
+    ("변수 간 상관", "주차만 아무 지표와도 붙지 않는다",
+     "가설 1 기각의 근거 →"),
+]
+
+
+def fig_eda_steps() -> None:
+    """EDA 슬라이드 교체용. 왼쪽 다섯 단계 + 오른쪽 상관 히트맵 한 장."""
+    panel = load("panel.csv")
+    d = panel[(panel.weekday == "토") & (panel.timeslot == "오후") & panel.has_parking]
+    cols = {"living_pop": "생활인구", "store_food": "음식점수", "facility_cnt": "집객시설수",
+            "resident_pop": "상주인구", "worker_pop": "직장인구", "slots_per_1k": "천명당주차면"}
+    sub = d[list(cols)].rename(columns=cols).dropna()
+    r = sub.corr()
+
+    fig, (ax, hx) = plt.subplots(
+        1, 2, figsize=(13.0, 5.0), gridspec_kw={"width_ratios": [1.42, 1], "wspace": 0.06})
+
+    # ── 왼쪽: 다섯 단계 ──────────────────────────────────
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 100)
+    ax.axis("off")
+    top, row_h = 95.0, 18.4
+    for i, (what, found, acted) in enumerate(EDA_STEPS):
+        y = top - i * row_h
+        last = i == len(EDA_STEPS) - 1
+        tone = ALERT if last else ACCENT
+        # 번호 배지
+        ax.text(3.2, y - 5.2, f"{i + 1}", ha="center", va="center",
+                fontsize=12.5, fontweight="bold", color="white",
+                bbox=dict(boxstyle="circle,pad=0.42", fc=tone, ec="none"))
+        ax.text(10, y - 1.4, what, fontsize=13.5, fontweight="bold",
+                color=INK, va="center")
+        ax.text(10, y - 7.4, found, fontsize=10.8, color=MUTED, va="center")
+        ax.text(10, y - 13.0, acted, fontsize=11.2, fontweight="bold",
+                color=tone, va="center")
+        if not last:  # 단계 사이 구분선
+            ax.plot([2.4, 99], [y - 16.6, y - 16.6], color=NEUTRAL, lw=0.8, alpha=0.65)
+
+    # ── 오른쪽: 다섯 번째 단계의 산출물 ───────────────────
+    im = hx.imshow(r, cmap="RdBu_r", vmin=-1, vmax=1)
+    hx.set_xticks(range(len(r)), r.columns, rotation=35, ha="right", fontsize=9)
+    hx.set_yticks(range(len(r)), r.index, fontsize=9)
+    for i in range(len(r)):
+        for j in range(len(r)):
+            v = r.iloc[i, j]
+            hx.text(j, i, f"{v:.2f}", ha="center", va="center", fontsize=8.6,
+                    fontweight="bold" if i != j and abs(v) < 0.2 else "normal",
+                    color="white" if abs(v) > 0.55 else INK)
+    # 결론이 걸린 줄
+    hx.add_patch(plt.Rectangle((-0.5, len(r) - 1.5), len(r), 1, fill=False,
+                               edgecolor=ALERT, lw=2.5))
+    hx.set_title("⑤ 변수 간 피어슨 상관  ·  토 · 오후 n=351",
+                 fontsize=10.5, color=MUTED, pad=8)
+    fig.colorbar(im, ax=hx, shrink=0.72, pad=0.02).ax.tick_params(labelsize=8)
+    save(fig, "10_eda_steps")
+
+
+# ─────────────────────────────────────────────────────────────
+# 데이터 슬라이드 — 7종을 한 표로 접는 과정 (엑셀 시트 모양)
+# ─────────────────────────────────────────────────────────────
+# 원본 시트에 넣는 표본은 실제 원본 파일에서 그대로 옮긴 값이다.
+#   생활인구  data/raw/living_population/20260606.csv (토) · 종로1.2.3.4가동(11110615)
+#   주차장    data/raw/parking_standard.csv 상위 행
+#   점포      data/external/commercial/점포_행정동.csv 20261 · 종로1.2.3.4가동
+#   가구      data/external/census/거처종류별가구_행정동.csv 상위 행
+# 원본은 저장소에 없을 수 있어(총조사는 수동 다운로드) 표본만 코드에 적어 둔다.
+# 최종 시트는 panel.csv에서 직접 읽으므로 숫자가 어긋날 일이 없다.
+SRC_COLOR = {
+    "생활인구": "#dceafa", "주차장": "#fbdedd", "상권": "#fdeed3",
+    "가구": "#dff0e2", "키": "#ebebe8", "파생": "#e6e0f7",
+}
+
+
+def _sheet(ax, x, y, widths, header, rows, hcolors=None, rowh=3.0, fs=8.6):
+    """엑셀 시트 한 덩어리. (x, y)는 헤더 행의 좌상단, y는 아래로 증가."""
+    xs = np.concatenate([[x], x + np.cumsum(widths)])
+    for j, (w, h) in enumerate(zip(widths, header)):
+        ax.add_patch(plt.Rectangle((xs[j], y), w, rowh,
+                                   facecolor=(hcolors[j] if hcolors else "#ebebe8"),
+                                   edgecolor="#b0b0ac", lw=0.8))
+        ax.text(xs[j] + w / 2, y + rowh / 2, h, ha="center", va="center",
+                fontsize=fs, fontweight="bold", color=INK)
+    for i, row in enumerate(rows):
+        yy = y + rowh * (i + 1)
+        for j, (w, v) in enumerate(zip(widths, row)):
+            ax.add_patch(plt.Rectangle((xs[j], yy), w, rowh, facecolor="white",
+                                       edgecolor="#d5d5d1", lw=0.7))
+            # 숫자는 오른쪽, 글자는 왼쪽 — 엑셀 기본 정렬
+            num = v.replace(",", "").replace(".", "").replace("%", "").isdigit()
+            ax.text(xs[j] + (w - 0.7 if num else 0.7), yy + rowh / 2, v,
+                    ha="right" if num else "left", va="center", fontsize=fs, color="#1b1b1b")
+    return y + rowh * (len(rows) + 1)
+
+
+def fig_panel_merge() -> None:
+    """슬라이드 10 — '엑셀로 했다면' 을 그대로 보인 그림.
+
+    파일마다 한 행의 뜻이 다르다는 것이 이 슬라이드의 전부다.
+    전부 '행정동 1행'으로 접은 뒤에야 옆으로 붙일 수 있다.
+    """
+    p = load("panel.csv")
+    pick = [("종로1.2.3.4가동", "토", "오후"), ("종로1.2.3.4가동", "화", "오전"),
+            ("신촌동", "토", "오후"), ("논현2동", "토", "오후")]
+    fin = [p[(p.admi_nm == nm) & (p.weekday == wd) & (p.timeslot == ts)].iloc[0]
+           for nm, wd, ts in pick]
+
+    fig, ax = plt.subplots(figsize=(13.2, 5.8))
+    ax.set_xlim(0, 100)
+    ax.set_ylim(78, 0)
+    ax.axis("off")
+
+    W, GAP = 22.9, 2.7
+    srcs = [
+        ("생활인구.csv  (56개 파일)", "생활인구", [0.20, 0.44, 0.36],
+         ["시간", "행정동코드", "생활인구"],
+         [["13", "11110615", "80,625.7"], ["14", "11110615", "86,048.5"],
+          ["15", "11110615", "89,132.4"]],
+         "한 행 = 동 × 시간 × 날짜\n569,856행 (424동×24시간×56일)",
+         "56일 평균 → 24시간을 6구간으로\n(피벗테이블)"),
+        ("주차장_표준데이터.csv", "주차장", [0.40, 0.40, 0.20],
+         ["주차장명", "주소", "면수"],
+         [["덕원주차장", "동대문구 장한로6길", "77"],
+          ["정릉천복개공영", "동대문구 정릉천동로", "143"],
+          ["신원동제1공영", "관악구 남부순환로", "23"]],
+         "한 행 = 주차장 1곳\n856개소 · 행정동 칸 없음",
+         "주소 → 행정동 (지오코딩)\n동별 면수 SUM"),
+        ("점포_행정동.csv", "상권", [0.42, 0.36, 0.22],
+         ["행정동", "업종", "점포수"],
+         [["종로1.2.3.4가동", "한식음식점", "1,112"],
+          ["종로1.2.3.4가동", "커피-음료", "475"],
+          ["종로1.2.3.4가동", "조명용품", "798"]],
+         "한 행 = 동 × 업종\n176,531행 (업종 100종)",
+         "음식점 8·카페 2 업종만 필터\n→ 동별 SUM"),
+        ("거처종류별가구.csv", "가구", [0.40, 0.32, 0.28],
+         ["행정동", "일반가구", "아파트"],
+         [["사직동", "4,004", "1,511"], ["삼청동", "906", "X"],
+          ["부암동", "3,715", "121"]],
+         "한 행 = 행정동 1개\n427행 · 비공개는 X",
+         "이미 동 단위 → 그대로\n(X는 결측 처리)"),
+    ]
+
+    for i, (title, key, wr, head, rows, note, todo) in enumerate(srcs):
+        x = i * (W + GAP)
+        ax.text(x + 0.3, 3.4, title, fontsize=10.5, fontweight="bold", color=INK, va="bottom")
+        widths = np.array(wr) * W
+        bot = _sheet(ax, x, 4.4, widths, head, rows, hcolors=[SRC_COLOR[key]] * len(head))
+        ax.text(x + 0.3, bot + 1.6, "⋮", fontsize=11, color=MUTED)
+        ax.text(x + 0.3, bot + 3.4, note, fontsize=9.5, color=MUTED, va="top", linespacing=1.5)
+        # 접는 방법 + 화살표
+        ax.text(x + W / 2, 26.6, todo, fontsize=9.6, color=ACCENT, ha="center", va="top",
+                linespacing=1.5, fontweight="bold")
+        ax.annotate("", xy=(x + W / 2, 38.8), xytext=(x + W / 2, 33.4),
+                    arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=2))
+
+    # ── 접은 뒤 옆으로 붙이는 단계
+    ax.add_patch(plt.Rectangle((0, 39.5), 98, 5.6, facecolor="#f4f7fb",
+                               edgecolor=ACCENT, lw=1.2))
+    ax.text(1.4, 42.3, "행정동 코드로 VLOOKUP", fontsize=11.5, fontweight="bold",
+            color=ACCENT, va="center")
+    ax.text(23.5, 42.3, "코드 체계가 달라 424동 중 32동(7.5%)만 매칭됐다 "
+                        "→ 행정동 코드 변환표를 하나 더 붙여 100%", fontsize=10.5,
+            color=ALERT_STRONG, va="center")
+
+    # ── 최종 시트
+    ax.text(0.3, 49.5, "panel.csv  —  17,808행 × 31열  (424동 × 7요일 × 6시간대)",
+            fontsize=12, fontweight="bold", color=INK, va="bottom")
+    cols = [("행정동", "키", 0.135), ("요일", "키", 0.048), ("시간대", "키", 0.058),
+            ("생활인구", "생활인구", 0.088), ("주차면", "주차장", 0.068),
+            ("음식점", "상권", 0.068), ("카페", "상권", 0.058),
+            ("일반가구", "가구", 0.078), ("아파트", "가구", 0.068),
+            ("천명당\n주차면", "파생", 0.088), ("비아파트\n100가구당", "파생", 0.11)]
+    widths = np.array([c[2] for c in cols]) * 98
+    rows = []
+    for r in fin:
+        rows.append([r.admi_nm, r.weekday, r.timeslot, f"{r.living_pop:,.0f}",
+                     f"{r.parking_slots:,.0f}", f"{r.store_food:,.0f}", f"{r.store_cafe:,.0f}",
+                     f"{r.households:,.0f}", f"{r.apartment:,.0f}",
+                     f"{r.slots_per_1k:.2f}", f"{r.slots_per_100_nonapt:.2f}"])
+    bot = _sheet(ax, 0, 50.5, widths, [c[0] for c in cols], rows,
+                 hcolors=[SRC_COLOR[c[1]] for c in cols], rowh=4.0, fs=9.6)
+    ax.text(0.7, bot + 1.8, "⋮", fontsize=12, color=MUTED)
+
+    # 같은 동인데 요일·시간대가 다른 두 행 — 패널 구조를 한눈에 (표 아래에 설명)
+    xs = np.concatenate([[0], np.cumsum(widths)])
+    ax.add_patch(plt.Rectangle((0, 54.5), widths[:3].sum(), 8.0, fill=False,
+                               edgecolor=ACCENT, lw=2))
+    ax.annotate("같은 동이어도 요일·시간대가 다르면 생활인구가 바뀌고, 파생변수도 같이 바뀐다\n"
+                "(주차면·음식점·가구 수는 그대로)", xy=(widths[:3].sum() / 2, 71.0),
+                xytext=(4.0, 73.4), fontsize=10.5, color=ACCENT, va="top",
+                linespacing=1.5, arrowprops=dict(arrowstyle="-|>", color=ACCENT, lw=1.4))
+    # 파생변수 열 — 표 위쪽 오른편에 라벨
+    ax.add_patch(plt.Rectangle((xs[9], 50.5), widths[9:].sum(), 20.0, fill=False,
+                               edgecolor="#6b4fbb", lw=2))
+    ax.text(xs[9] + widths[9:].sum() / 2, 48.6,
+            "나눗셈으로 만든 열 = 파생변수", fontsize=10.5, color="#6b4fbb",
+            ha="center", va="bottom", fontweight="bold")
+    ax.annotate("", xy=(xs[9] + widths[9:].sum() / 2, 50.4),
+                xytext=(xs[9] + widths[9:].sum() / 2, 48.4),
+                arrowprops=dict(arrowstyle="-|>", color="#6b4fbb", lw=1.4))
+
+    save(fig, "09_panel_merge")
+
+
+# ─────────────────────────────────────────────────────────────
+# 데이터 슬라이드 — 파생변수: 매력도는 어떻게 만들어졌는가
+# ─────────────────────────────────────────────────────────────
+def fig_derived_vars() -> None:
+    """'매력도'를 말로만 설명하면 안 들린다. 만들어지는 과정을 두 장면으로 보인다.
+
+    ① 로딩 — 5개 변수를 넣었더니 축 2개로 갈라졌다. 축 이름은 이 표를 보고 붙였다.
+    ② 기하평균 — 한쪽만 높은 동네가 왜 떨어지는지, 실제 동네 3곳으로 보인다.
+    """
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+
+    d = load("dong_suitability.csv")
+    cols = {"store_food": "음식점 수", "store_cafe": "카페 수", "facility_cnt": "집객시설 수",
+            "slots_per_1k": "천명당 주차면", "z_residual": "주차 여유(잔차)"}
+    log_vars = ["store_food", "store_cafe", "facility_cnt", "slots_per_1k"]
+
+    X = d[list(cols)].copy()
+    for c in log_vars:
+        X[c] = np.log1p(X[c])
+    pca = PCA(random_state=0).fit(StandardScaler().fit_transform(X))
+    comp = pca.components_[:2].copy()
+    # suitability.py와 같은 부호 고정 (음식점·천명당주차면 로딩이 양수)
+    for pc, anchor in {0: "store_food", 1: "slots_per_1k"}.items():
+        if comp[pc, list(cols).index(anchor)] < 0:
+            comp[pc] *= -1
+    ev = pca.explained_variance_ratio_
+
+    fig, axes = plt.subplots(1, 2, figsize=(12.4, 4.5),
+                             gridspec_kw={"width_ratios": [1, 1.25]})
+
+    # ① 로딩 — 두 축이 갈라진 모습 자체가 근거다
+    ax = axes[0]
+    L = comp.T
+    ax.imshow(L, cmap="RdBu_r", vmin=-0.8, vmax=0.8, aspect="auto")
+    ax.set_xticks(range(2), [f"매력도 축\n(정보의 {ev[0]:.0%})", f"주차 여유 축\n(정보의 {ev[1]:.0%})"],
+                  fontsize=12, fontweight="bold")
+    ax.set_yticks(range(len(cols)), list(cols.values()), fontsize=11.5)
+    for i in range(L.shape[0]):
+        for j in range(2):
+            ax.text(j, i, f"{L[i, j]:+.2f}", ha="center", va="center", fontsize=12,
+                    fontweight="bold" if abs(L[i, j]) > 0.5 else "normal",
+                    color="white" if abs(L[i, j]) > 0.5 else INK)
+    ax.add_patch(plt.Rectangle((-0.5, -0.5), 1, 3, fill=False, edgecolor=ALERT, lw=2.5))
+    ax.add_patch(plt.Rectangle((0.5, 2.5), 1, 2, fill=False, edgecolor=ACCENT, lw=2.5))
+    ax.tick_params(length=0)
+    ax.set_xlabel("놀거리 3종과 주차 2종이 서로 다른 축으로 갈렸다", fontsize=11.5, color=MUTED)
+
+    # ② 기하평균 — 약한 쪽이 병목
+    ax = axes[1]
+    pick = ["종로1.2.3.4가동", "신촌동", "면목5동"]
+    sub = d.set_index("admi_nm").loc[pick]
+    y = np.arange(len(pick))[::-1]
+    ax.barh(y + 0.19, sub.매력도지수_pct, height=0.34, color="#F58518", label="매력도 백분위")
+    ax.barh(y - 0.19, sub.주차여유지수_pct, height=0.34, color=ACCENT, label="주차 여유 백분위")
+    for yy, (_, r) in zip(y, sub.iterrows()):
+        for off, v in ((0.19, r.매력도지수_pct), (-0.19, r.주차여유지수_pct)):
+            ax.text(v + 1.5, yy + off, f"{v:.0f}", va="center", fontsize=11)
+        ax.text(118, yy, f"적합도 {r.나들이적합도:.0f}", va="center", ha="right",
+                fontsize=13, fontweight="bold",
+                color=INK if r.나들이적합도 > 50 else ALERT)
+    ax.set_yticks(y, [f"{r.sgg_nm}\n{nm}" for nm, r in sub.iterrows()], fontsize=11.5)
+    ax.set_xlim(0, 120)
+    ax.set_xticks([0, 50, 100])
+    ax.legend(fontsize=11, loc="lower right", frameon=False, ncol=2,
+              bbox_to_anchor=(1.0, -0.28))
+    ax.grid(axis="x", alpha=0.25)
+    ax.set_xlabel("적합도 = 두 백분위의 기하평균 — 한쪽이 낮으면 같이 내려간다",
+                  fontsize=11.5, color=MUTED)
+
+    save(fig, "09_derived_vars")
+
+
 def _cli() -> None:
     """저장 위치와 배경 투명 여부를 인자로 받는다."""
     global OUT, TRANSPARENT
@@ -373,6 +665,7 @@ def _cli() -> None:
 
 def main() -> None:
     fig_eda_corr()
+    fig_eda_steps()
     fig_core_result()
     fig_hypothesis_13()
     fig_cluster_pattern()
@@ -380,7 +673,9 @@ def main() -> None:
     fig_recommend()
     fig_false_positive()
     fig_priority()
-    logger.info(f"발표용 그림 7종 완료 -> {OUT}")
+    fig_panel_merge()
+    fig_derived_vars()
+    logger.info(f"발표용 그림 11종 완료 -> {OUT}")
 
 
 if __name__ == "__main__":

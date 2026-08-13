@@ -72,8 +72,9 @@ X = np.log1p(use[list(FEATURES)].clip(lower=0).to_numpy())
 # 화면에서 바로 확인할 수 있어야 하기 때문이다.
 DEFAULT_K = 4
 
-c1, c2 = st.columns([1, 2])
-auto = c1.checkbox("실루엣 계수로 자동 결정", value=False)
+# 그래프를 넓은 왼쪽에 두고 k 조절은 그래프 오른쪽에 붙인다.
+c_plot, c_ctl = st.columns([2, 1])
+auto = c_ctl.checkbox("실루엣 계수로 자동 결정", value=False)
 
 zs = StandardScaler().fit_transform(X)
 sil = {}
@@ -82,9 +83,9 @@ for kk in range(2, 8):
     sil[kk] = silhouette_score(zs, lab)
 best_k = max(sil, key=sil.get)
 
-k = best_k if auto else c1.slider("군집 수 k", 2, 7, DEFAULT_K)
+k = best_k if auto else c_ctl.slider("군집 수 k", 2, 7, DEFAULT_K)
 
-with c2:
+with c_plot:
     st.markdown(f"**군집 수별 실루엣 계수** — 최적 k = {best_k}")
     sil_df = pd.DataFrame({"k": list(sil), "실루엣계수": list(sil.values())})
     figs = px.line(sil_df, x="k", y="실루엣계수", markers=True)
@@ -93,6 +94,13 @@ with c2:
     figs.update_layout(height=230, margin=dict(t=30, b=10, l=10, r=10))
     figs.update_xaxes(tickmode="linear", dtick=1)
     st.plotly_chart(figs, use_container_width=True)
+    # 비전공자도 축을 읽을 수 있도록 계수의 뜻을 그래프 옆에 붙여둔다.
+    st.caption(
+        "**실루엣 계수란?** 군집이 잘 나뉘었는지 판단하는 점수입니다. "
+        "주거지수 · 20~30대 비중 · 천명당 주차면 · 천명당 음식점 · 천명당 집객시설을 사용해 "
+        "동네 각각의 값을 구해 평균을 냈습니다. "
+        "쉽게 말하면 **\"내 조 사람들과는 가깝고, 옆 조와는 먼가\"** 에 대한 점수입니다."
+    )
     # 최적값과 다른 k를 쓸 때 그 사실을 숨기지 않는다.
     # 곡선이 평평하다는 것 자체가 '서울 동네는 딱 잘리지 않는다'는 결과이므로,
     # 최적값을 안 따른 이유까지 화면에서 읽히게 둔다.
