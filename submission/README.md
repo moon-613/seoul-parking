@@ -2,6 +2,12 @@
 
 서울시 생활인구 기반 행정동별 주차수급 불균형 진단 및 취약지역 도출
 
+## 배포된 대시보드
+
+**https://seoul-parking.streamlit.app/**
+
+설치 없이 바로 열람 가능합니다. 소스는 아래 `05_소스코드.zip` 과 동일합니다.
+
 ## 폴더 구성
 
 | 폴더 | 담을 것 | 상태 |
@@ -10,6 +16,7 @@
 | `02_발표자료/` | 발표용 슬라이드 (PPTX/PDF) — `src/report/build_deck.py`로 생성 | ✅ |
 | `03_최종데이터/` | 최종 분석 테이블 8종 + 컬럼 설명 README | ✅ |
 | `04_스크린샷/` | 대시보드 5페이지 전체 캡처 + README | ✅ |
+| `05_소스코드.zip` | 전체 소스 (대시보드·수집·전처리·분석) + 구동용 데이터 | ✅ |
 
 ## 제출 체크리스트
 
@@ -17,8 +24,27 @@
 - [x] 발표자료
 - [x] 최종 데이터셋 — `panel.csv` 외 7종 (`03_최종데이터/README.md`에 컬럼 명세)
 - [x] 대시보드 스크린샷 — 현황(KPI·시간대 곡선·자치구 막대) / 지도 / 동네추천 / 동네유형(PCA 군집) / 확충 우선순위
-- [ ] 소스코드 (GitHub 저장소 링크 또는 압축본)
-- [ ] README (실행 방법 포함)
+- [x] 소스코드 — `05_소스코드.zip` (`git archive` 로 생성, 배포 URL과 동일 커밋)
+- [x] README (실행 방법 포함) — zip 안 루트 `README.md` 「시작하기」
+
+## 소스코드 zip 구성
+
+`git archive` 로 뽑아 `.env`·`.venv`·`__pycache__` 는 자동 제외됩니다 (6MB, 118개 파일).
+
+| 경로 | 내용 |
+|---|---|
+| `dashboard/` | Streamlit 앱 — `app.py` + `common.py` + `map_render.py` + `views/` 6페이지 |
+| `src/` | 수집·전처리·분석·보고서 생성 스크립트 |
+| `data/processed/`, `data/external/` | 대시보드 구동에 필요한 CSV 7종 + 행정동 경계 geojson |
+| `config/config.yaml`, `.streamlit/` | 설정·테마 |
+| `requirements.txt` | 대시보드 실행용 (dev 는 `requirements-dev.txt`) |
+
+로컬 실행:
+
+```bash
+pip install -r requirements.txt
+streamlit run dashboard/app.py
+```
 
 ## 주의
 
