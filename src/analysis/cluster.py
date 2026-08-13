@@ -46,7 +46,7 @@ from sklearn.preprocessing import StandardScaler
 from src.utils.logger import get_logger
 from src.utils.plotstyle import use_korean_font
 from src.utils.settings import DATA_PROCESSED, ROOT_DIR, get_config
-from src.utils.timeslot import timeslot_order
+from src.utils.timeslot import recommend_timeslots, timeslot_order
 
 logger = get_logger(__name__)
 
@@ -255,8 +255,12 @@ def main():
     for nm, sub in d.groupby("유형"):
         print(f"  {nm:8} {', '.join(sub.nlargest(4, 'living_pop').admi_nm)}")
 
-    print("\n=== 유형별 가장 여유로운 때 / 가장 빠듯한 때 (유형 내 평균=100) ===")
-    for nm, row in prof_idx.iterrows():
+    # 히트맵에는 아침도 그대로 두어 패턴을 보여 주되, '가장 여유로운 때'로 내미는
+    # 것은 실행 가능한 시간대 중에서만 고른다. 아침을 후보에 넣으면 상권형의 최적이
+    # '일·아침'으로 잡히는데, 사람이 없어서 빈 것이라 나들이 추천이 되지 않는다.
+    pick = prof_idx[[c for c in prof_idx.columns if c[1] in set(recommend_timeslots())]]
+    print("\n=== 유형별 가장 여유로운 때 / 가장 빠듯한 때 (유형 내 평균=100, 아침 제외) ===")
+    for nm, row in pick.iterrows():
         b, w = row.idxmax(), row.idxmin()
         print(f"  {nm:8} 여유 {b[0]}·{b[1]} ({row.max():.0f})"
               f"   빠듯 {w[0]}·{w[1]} ({row.min():.0f})"

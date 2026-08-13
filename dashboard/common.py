@@ -18,7 +18,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 # src 모듈은 위에서 sys.path를 잡은 뒤에야 임포트할 수 있다
-from src.utils.timeslot import get_timeslots, get_weekday_names  # noqa: E402
+from src.utils.timeslot import (  # noqa: E402
+    get_recommend_exclude, get_timeslots, get_weekday_names, recommend_timeslots,
+)
 
 PROCESSED = ROOT / "data" / "processed"
 PANEL_PATH = PROCESSED / "panel.csv"
@@ -42,6 +44,20 @@ WEEKDAYS = get_weekday_names()
 TIMESLOTS = [s["name"] for s in get_timeslots()]
 TIMESLOT_LABEL = {s["name"]: f'{s["name"]} {s["label"]}' for s in get_timeslots()}
 
+# 추천 후보에서 빠지는 시간대 (config.panel.recommend_exclude). 조회는 되지만
+# '언제 가면 좋은가'의 답으로는 내밀지 않는다.
+RECOMMEND_EXCLUDE = get_recommend_exclude()
+RECOMMEND_TIMESLOTS = recommend_timeslots()
+
+# 시간대 '전체' — 한 요일의 시간대를 모두 합쳐 본다.
+# '하루 종일'이라고 쓰지 않는 이유: config가 심야(00~06시)를 분석 대상에서 빼고 있어
+# 실제로는 6~24시다. 라벨에 구간을 박아 두어 오해를 막는다.
+# 구간을 늘리거나 줄이면 이 값도 config를 따라 자동으로 바뀐다.
+ALL_TIMESLOT = "전체"
+DAY_SPAN = f'{get_timeslots()[0]["start"]}-{get_timeslots()[-1]["end"]}시'
+TIMESLOT_LABEL[ALL_TIMESLOT] = f"{ALL_TIMESLOT} {DAY_SPAN}"
+TIMESLOT_CHOICES = [ALL_TIMESLOT] + TIMESLOTS
+
 # ── 색 팔레트 ─────────────────────────────────────────────────
 # 회색·파랑을 바탕으로 두고 빨강은 경고에만 쓴다.
 # 색은 '역할'로만 배정한다. 같은 색이 페이지마다 다른 뜻을 갖지 않도록 여기서만 정의한다.
@@ -49,7 +65,8 @@ TIMESLOT_LABEL = {s["name"]: f'{s["name"]} {s["label"]}' for s in get_timeslots(
 # 역할이 셋뿐이다
 #   크기(magnitude) -> 파랑 한 색상, 밝음→어두움          SCALE_SEQ
 #   극성(polarity)  -> 빨강 ↔ 회색 ↔ 파랑                SCALE_DIV
-#   상태(status)    -> 경고만 빨강, 나머지는 회색·연파랑    STATE_COLOR / GRADE_COLOR
+#   상태(status)    -> 지도는 파랑 농도(진할수록 시급), 회색은 해당 없음   STATE_COLOR
+#                      차트에서 한두 개를 짚어 경고할 때만 빨강            GRADE_COLOR
 #
 # 예전에는 RdYlGn(무지개 발산)·OrRd·Purples·Reds_r을 섞어 써서
 # 한 화면에 빨강·노랑·초록·보라가 동시에 떴다. 무지개 발산은 중간값이
@@ -75,13 +92,20 @@ NEUTRAL = "#898781"    # 해당 없음 / 조치 불필요
 BACKDROP = "#dbe8f8"   # 조치 없음 (배경으로 물러남)
 ACCENT = "#2a78d6"     # 주력 · 긍정
 ACCENT_LIGHT = "#86b6ef"
+ACCENT_DEEP = "#104281"   # 가장 진한 파랑 (SCALE_SEQ 끝) — 가장 시급한 것
 
 # 공급 상태 (지도) — '보통'은 전경이 아니라 배경이라 팔레트 검증에서 제외했다
+#
+# 빨강 대신 파랑 농도로 시급도를 표현한다. 이 지도는 행정동 425개를 한 번에
+# 칠하는데 확충 후보 52 + 0면 62 = 114개가 빨강이라 화면의 4분의 1이 경고색이
+# 되어, 빨강이 '경고'가 아니라 그냥 '많은 색'으로 읽혔다. 다른 지도가 모두
+# 파랑 순차 램프(SCALE_SEQ)를 쓰므로 여기서만 색상이 튀는 문제도 있었다.
+# 진할수록 시급 — 회색은 램프 밖에 두어 '해당 없음'을 뜻한다.
 STATE_COLOR = {
-    "확충 후보": ALERT,
-    "공영주차 0면": ALERT_STRONG,
-    "확충 불필요 (아파트 밀집)": NEUTRAL,
+    "공영주차 0면": ACCENT_DEEP,
+    "확충 후보": ACCENT,
     "보통": BACKDROP,
+    "확충 불필요": NEUTRAL,
 }
 
 # 잔차 등급
@@ -173,9 +197,10 @@ def sidebar_filters(df: pd.DataFrame,
             key="weekday",
         )
     if "timeslot" in need:
+        cur_ts = st.session_state.get("timeslot", "오후")
         f["timeslot"] = st.sidebar.selectbox(
-            "시간대", TIMESLOTS,
-            index=TIMESLOTS.index(st.session_state.get("timeslot", "오후")),
+            "시간대", TIMESLOT_CHOICES,
+            index=TIMESLOT_CHOICES.index(cur_ts if cur_ts in TIMESLOT_CHOICES else "오후"),
             format_func=lambda x: TIMESLOT_LABEL[x],
             key="timeslot",
         )
@@ -190,9 +215,20 @@ def sidebar_filters(df: pd.DataFrame,
 
     st.sidebar.caption(
         f"기준: 생활인구 2026-06-02~07-27 (56일)\n\n"
-        f"선택: **{f['weekday']}요일 {TIMESLOT_LABEL[f['timeslot']]}**"
+        f"선택: **{when_phrase(f)}**"
     )
     return f
+
+
+def when_phrase(f: dict) -> str:
+    """선택한 시점을 사람 말로. '토요일 오후 15-18시' / '토요일 하루 전체(10-24시)'.
+
+    시간대 '전체'를 TIMESLOT_LABEL로 그대로 풀면 '토요일 전체 10-24시'가 되어
+    무엇이 전체인지(요일인지 시간대인지) 모호하다. 여기서 한 번만 다듬는다.
+    """
+    if f["timeslot"] == ALL_TIMESLOT:
+        return f"{f['weekday']}요일 하루 전체({DAY_SPAN})"
+    return f"{f['weekday']}요일 {TIMESLOT_LABEL[f['timeslot']]}"
 
 
 def with_parking(df: pd.DataFrame) -> pd.DataFrame:
@@ -218,15 +254,42 @@ def scope_phrase(f: dict) -> str:
     저쪽은 지금 무엇을 고른 상태인지 알리는 것이고, 이쪽은 결과로 이어지는 문장이다.
     자치구를 고르면 '가면', 전체면 '보면'으로 받아 두 경우의 어투를 맞춘다.
     """
-    when = f"{f['weekday']}요일 {TIMESLOT_LABEL[f['timeslot']]}"
+    when = when_phrase(f)
     if f["gu"] == "전체":
         return f"{when}, 서울 전체를 보면"
     return f"{f['gu']}에 {when}에 가면"
 
 
+@st.cache_data
+def average_day(d: pd.DataFrame) -> pd.DataFrame:
+    """한 요일의 시간대 전부를 행정동 1행으로 합친다 (시간대 '전체').
+
+    비율은 평균내지 않고 인구를 평균낸 뒤 다시 계산한다.
+    '천명당주차면'의 시간대별 평균과 '하루 평균 인구 천명당 주차면'은 다른 값인데
+    (비율의 평균 != 평균의 비율), 이 지표가 뜻하는 바는 후자다.
+    주차면은 고정이고 인구만 변하므로 분모만 평균내면 된다. young_ratio도 같은 이유.
+
+    패널은 (행정동, 요일)마다 모든 시간대가 빠짐없이 있어 단순평균으로 충분하다.
+    """
+    MEAN = ["living_pop", "young_pop"]        # 시간에 따라 변하는 원자료
+    DERIVED = ["slots_per_1k", "young_ratio"]  # 위에서 다시 계산할 비율
+    keep = [c for c in d.columns if c not in MEAN + DERIVED + ["timeslot", "adm_cd"]]
+
+    out = (d.groupby("adm_cd", observed=True, as_index=False)
+             .agg({**{c: "first" for c in keep}, **{c: "mean" for c in MEAN}}))
+    out["slots_per_1k"] = out["parking_slots"] / out["living_pop"] * 1000
+    out["young_ratio"] = out["young_pop"] / out["living_pop"]
+    out["timeslot"] = ALL_TIMESLOT
+    return out[list(d.columns)]
+
+
 def apply_filters(df: pd.DataFrame, f: dict, apply_gu: bool = True) -> pd.DataFrame:
     """선택 조건으로 패널을 자른다. 결과는 행정동 1개당 1행."""
-    d = df[(df["weekday"] == f["weekday"]) & (df["timeslot"] == f["timeslot"])].copy()
+    d = df[df["weekday"] == f["weekday"]]
+    if f["timeslot"] == ALL_TIMESLOT:
+        d = average_day(d)
+    else:
+        d = d[d["timeslot"] == f["timeslot"]].copy()
     if apply_gu and f["gu"] != "전체":
         d = d[d["sgg_nm"] == f["gu"]]
     return d

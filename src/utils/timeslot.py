@@ -41,3 +41,18 @@ def add_panel_keys(df: pd.DataFrame, date_col: str, hour_col: str) -> pd.DataFra
 def timeslot_order() -> list[str]:
     """차트 정렬용 시간대 순서."""
     return [s["name"] for s in get_timeslots()]
+
+
+def get_recommend_exclude() -> list[str]:
+    """'언제 가면 좋은가' 추천에서 뺄 시간대 (config.panel.recommend_exclude)."""
+    return get_config()["panel"].get("recommend_exclude", [])
+
+
+def recommend_timeslots() -> list[str]:
+    """최적 시점 후보가 되는 시간대만. 조회·집계용인 timeslot_order()와 구분해서 쓴다.
+
+    아침(06-10)은 패널에는 있지만 여기서 빠진다 — 주차가 비는 건 사실이나
+    나들이객이 실행할 수 없는 답이라 '가장 여유로운 때'로 내밀 수 없다.
+    """
+    drop = set(get_recommend_exclude())
+    return [s for s in timeslot_order() if s not in drop]

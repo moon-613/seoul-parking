@@ -63,7 +63,9 @@ seoul_line = df[df["weekday"] == f["weekday"]]
 
 cur = line_src.groupby("timeslot", observed=True)["living_pop"].mean().reindex(TIMESLOTS)
 ref = seoul_line.groupby("timeslot", observed=True)["living_pop"].mean().reindex(TIMESLOTS)
-sel_i = TIMESLOTS.index(f["timeslot"])
+# 시간대 '전체'는 이 차트의 가로축에 대응하는 칸이 없다 (축이 곧 시간대다).
+# 이때는 강조 띠를 그리지 않는다 — 다섯 칸 전부가 선택된 셈이라 강조가 무의미하다.
+sel_i = TIMESLOTS.index(f["timeslot"]) if f["timeslot"] in TIMESLOTS else None
 
 fig = go.Figure()
 # 자치구가 '전체'면 두 선의 값이 같아 파란 선이 회색 점선을 덮는다.
@@ -76,19 +78,21 @@ scope_label = "서울 전체" if f["gu"] == "전체" else f["gu"]
 fig.add_trace(go.Scatter(x=TIMESLOTS, y=cur, name=scope_label,
                          mode="lines+markers", line=dict(color=ACCENT, width=3)))
 # 선택 시간대는 옅은 띠로만 표시한다
-fig.add_vrect(x0=sel_i - 0.45, x1=sel_i + 0.45,
-              fillcolor=ACCENT_LIGHT, opacity=0.35, line_width=0, layer="below")
+if sel_i is not None:
+    fig.add_vrect(x0=sel_i - 0.45, x1=sel_i + 0.45,
+                  fillcolor=ACCENT_LIGHT, opacity=0.35, line_width=0, layer="below")
 fig.update_layout(height=400, margin=dict(t=10, b=10),
                   yaxis_title="평균 생활인구(명)", xaxis_title=None,
                   legend=dict(orientation="h", y=1.12))
 st.plotly_chart(fig, use_container_width=True)
 
+band = (f"**옅은 배경**이 선택한 시간대({f['timeslot']})입니다. " if sel_i is not None
+        else f"시간대를 **전체**로 두어 {len(TIMESLOTS)}개 시간대를 강조 없이 함께 봅니다. ")
 if f["gu"] == "전체":
-    st.caption(f"**파란 선**이 서울 전체 평균입니다. **옅은 배경**이 선택한 시간대({f['timeslot']})입니다. "
-               "사이드바에서 자치구를 고르면 서울 평균과 비교하는 회색 점선이 함께 나옵니다.")
+    st.caption("**파란 선**이 서울 전체 평균입니다. " + band
+               + "사이드바에서 자치구를 고르면 서울 평균과 비교하는 회색 점선이 함께 나옵니다.")
 else:
-    st.caption(f"**파란 선**이 {f['gu']}, **회색 점선**이 서울 전체입니다. "
-               f"**옅은 배경**이 선택한 시간대({f['timeslot']})입니다.")
+    st.caption(f"**파란 선**이 {f['gu']}, **회색 점선**이 서울 전체입니다. " + band)
 
 # ── 자치구별 여유도 ─────────────────────────────────────────────
 st.subheader("자치구별 공영주차 여유도")
@@ -151,21 +155,27 @@ t1, t2 = st.columns(2)
 with t1:
     st.markdown("**여유 TOP 10**")
     st.dataframe(ranked.nlargest(10, "slots_per_1k")[cols].rename(columns=names)
-                 .style.format(fmt), use_container_width=True, hide_index=True)
+                 .style.format(fmt), use_container_width=True, hide_index=True,
+                 height="content")
 with t2:
     st.markdown("**빠듯 TOP 10**")
     st.dataframe(ranked.nsmallest(10, "slots_per_1k")[cols].rename(columns=names)
-                 .style.format(fmt), use_container_width=True, hide_index=True)
+                 .style.format(fmt), use_container_width=True, hide_index=True,
+                 height="content")
 
 if zero_n:
+    # 안내는 나들이객이 볼 수 있는 화면만 가리킨다. '공급 상태 구분'은 정책 담당자
+    # 지도에만 있어서, 이 페이지에서 그쪽을 가리키면 끊어진 링크가 된다.
     st.warning(
-        f"위 순위에서 **공영주차가 0면인 {zero_n}개 동**은 빠져 있습니다. "
-        "이 동네들은 🗺️ 지도의 **공급 상태 구분**에서 따로 확인하세요.",
+        f"위 순위에는 **공영주차장이 아예 없는 {zero_n}개 동**이 빠져 있습니다 — "
+        "넣으면 '빠듯 TOP 10'이 전부 0면 동이라 순위가 되지 않습니다. "
+        "차로 가신다면 민영주차장을 찾아야 하는 동네입니다. "
+        "🗺️ **지도**에서 **공영주차 여유도**를 고르면 이 동네들이 값 0으로 표시됩니다.",
         icon="⚠️",
     )
 
 st.info(
-    "**천명당주차면**은 그 시간대에 그 동네에 있는 사람 1,000명당 공영주차면 수입니다. "
+    "**천명당주차면**은 그 시간대에 그 동네에 있는 사람 1,000명당 공영주차면 수입니다.  \n"
     "주차면은 고정이고 사람 수가 시간에 따라 변하므로, **같은 동네도 시간대에 따라 값이 달라집니다.**",
     icon="💡",
 )

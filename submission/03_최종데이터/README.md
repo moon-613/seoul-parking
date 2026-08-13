@@ -13,7 +13,7 @@
 
 | 파일 | 행 × 열 | 생성 스크립트 | 내용 |
 |---|---|---|---|
-| `panel.csv` | **14,840 × 31** | `preprocess/build_panel.py` | ★ 모든 분석의 입력. 행정동 424 × 요일 7 × 시간대 5 |
+| `panel.csv` | **17,808 × 31** | `preprocess/build_panel.py` | ★ 모든 분석의 입력. 행정동 424 × 요일 7 × 시간대 6 |
 | `dong_residual.csv` | 358 × 12 | `analysis/residual.py` | 회귀 잔차·과부족 등급 |
 | `dong_recommend.csv` | 423 × 17 | `analysis/recommend.py` | 매력도 × 주차여유 결합 등급 |
 | `dong_cluster.csv` | 351 × 17 | `analysis/cluster.py` | 동네 유형(PCA + KMeans) |
@@ -40,7 +40,7 @@
 
 ---
 
-## 1. `panel.csv` — 기본 패널 (14,840 × 31)
+## 1. `panel.csv` — 기본 패널 (17,808 × 31)
 
 한 행 = **한 행정동의 한 시점**(요일 × 시간대). 나머지 7개 파일이 전부 이 테이블에서 파생됩니다.
 

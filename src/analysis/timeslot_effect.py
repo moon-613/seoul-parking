@@ -37,7 +37,7 @@ from scipy import stats
 from src.utils.logger import get_logger
 from src.utils.plotstyle import use_korean_font
 from src.utils.settings import DATA_PROCESSED, ROOT_DIR
-from src.utils.timeslot import timeslot_order
+from src.utils.timeslot import get_recommend_exclude, recommend_timeslots
 
 logger = get_logger(__name__)
 
@@ -49,16 +49,23 @@ MEANINGFUL = 0.20   # 체감 가능한 개선률 기준 (+20%)
 
 
 def load_wide() -> pd.DataFrame:
-    """행정동 × (요일, 시간대) 주차 여유 행렬. 28개 시점이 모두 있는 동만 남긴다."""
+    """행정동 × (요일, 시간대) 주차 여유 행렬. 모든 시점이 있는 동만 남긴다.
+
+    이 분석은 '언제 가면 좋은가'를 답하므로 추천 대상 시간대만 쓴다.
+    아침(06-10)은 패널에 있지만 여기서 빠진다 — config.panel.recommend_exclude 참조.
+    """
+    slots = recommend_timeslots()
     panel = pd.read_csv(DATA_PROCESSED / "panel.csv", dtype={"adm_cd": str, "admi_cd": str})
     d = panel[panel.has_parking]
     w = d.pivot_table(index=["admi_cd", "sgg_nm", "admi_nm"],
                       columns=["weekday", "timeslot"], values="slots_per_1k", observed=True)
     w = w.reindex(columns=pd.MultiIndex.from_product(
-        [WEEKDAYS, timeslot_order()], names=["weekday", "timeslot"]))
+        [WEEKDAYS, slots], names=["weekday", "timeslot"]))
     before = len(w)
     w = w.dropna()
-    logger.info(f"행정동 {before}개 중 28개 시점이 모두 있는 {len(w)}개 사용")
+    if get_recommend_exclude():
+        logger.info(f"추천 제외 시간대 {get_recommend_exclude()} — 후보에서 뺐다")
+    logger.info(f"행정동 {before}개 중 {w.shape[1]}개 시점이 모두 있는 {len(w)}개 사용")
     return w
 
 
@@ -68,7 +75,7 @@ def friedman(w: pd.DataFrame, level: str) -> tuple[float, float, int]:
         groups = [w[c].to_numpy() for c in w.columns]
     else:
         agg = w.T.groupby(level=level).mean().T
-        order = timeslot_order() if level == "timeslot" else WEEKDAYS
+        order = recommend_timeslots() if level == "timeslot" else WEEKDAYS
         groups = [agg[c].to_numpy() for c in order]
     stat, p = stats.friedmanchisquare(*groups)
     return stat, p, len(groups)
@@ -100,7 +107,7 @@ def plot(w: pd.DataFrame, eff: pd.DataFrame, p_all: float) -> None:
     idx = w.mean() / w.mean().mean() * 100
     for wd in WEEKDAYS:
         sub = idx.loc[wd]
-        ax.plot(timeslot_order(), sub.values, "o-", lw=1.6, ms=5, label=wd,
+        ax.plot(recommend_timeslots(), sub.values, "o-", lw=1.6, ms=5, label=wd,
                 color=("#D62728" if wd in ("토", "일") else "#4C78A8"),
                 alpha=1.0 if wd in ("토", "일") else 0.45)
     ax.axhline(100, color="#888", ls="--", lw=1)

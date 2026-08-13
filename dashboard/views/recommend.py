@@ -6,13 +6,17 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from common import (
-    COURSE_COLOR, INK, SCALE_SEQ, TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS,
-    apply_filters, page_header, require_analysis, require_data, scope_phrase,
-    sidebar_filters, with_parking,
+    COURSE_COLOR, INK, RECOMMEND_EXCLUDE, RECOMMEND_TIMESLOTS, SCALE_SEQ,
+    TIMESLOTS, TIMESLOT_LABEL, WEEKDAYS, apply_filters, page_header,
+    require_analysis, require_data, scope_phrase, sidebar_filters, with_parking,
 )
 
 df = require_data()
-f = sidebar_filters(df, need=("weekday", "timeslot", "gu"))
+# 자치구는 사이드바에 두지 않는다. 이 페이지는 산점도도 랭킹도 서울 전체를 그리므로
+# (apply_gu=False) 사이드바에서 고른 자치구가 화면을 바꾸지 않는데, scope_phrase는
+# '강남구에 가면'이라고 말해 필터가 걸린 것처럼 보였다.
+# 자치구를 고르는 자리는 아래 '언제 가면 좋을까'의 드롭다운 하나로 충분하다.
+f = sidebar_filters(df, need=("weekday", "timeslot"))
 suit = require_analysis("suitability")
 d = apply_filters(df, f, apply_gu=False).dropna(subset=["store_food"])
 
@@ -130,9 +134,12 @@ else:
     first = d.sort_values(["sgg_nm", "admi_nm"]).iloc[0]
     default_gu, default_dong = first.sgg_nm, first.admi_nm
 
-# 사이드바에서 자치구를 골랐다면 그것을 우선한다
-if f["gu"] != "전체":
-    default_gu = f["gu"]
+# 다른 페이지에서 고른 자치구가 있으면 그것을 기본값으로 이어받는다.
+# 이 페이지 사이드바에는 자치구가 없지만 선택값은 session_state에 남아 있어,
+# 현황·지도에서 강남구를 보다 넘어오면 여기서도 강남구부터 열린다.
+prev_gu = st.session_state.get("gu", "전체")
+if prev_gu != "전체":
+    default_gu = prev_gu
 
 gu_list = sorted(d["sgg_nm"].dropna().unique())
 s1, s2 = st.columns(2)
@@ -174,13 +181,22 @@ fig2 = px.imshow(
 fig2.update_layout(height=380, margin=dict(t=10, b=10))
 st.plotly_chart(fig2, use_container_width=True)
 
-best = prof.stack().idxmax()
-worst = prof.stack().idxmin()
+# 히트맵에는 아침(06-10)도 그대로 두되, '가장 여유로운 때'로는 고르지 않는다.
+# 이 시간대는 주차가 실제로 비지만 사람이 없어서 비는 것이라, 나들이객에게
+# "아침 7시에 가세요"는 실행할 수 없는 답이다. 제외 대상은 config에서 관리한다.
+pick = prof[[c for c in prof.columns if c in RECOMMEND_TIMESLOTS]]
+best = pick.stack().idxmax()
+worst = pick.stack().idxmin()
 b1, b2 = st.columns(2)
-b1.success(f"**가장 여유**: {best[0]}요일 {TIMESLOT_LABEL[best[1]]} — {prof.loc[best]:.1f}")
-b2.error(f"**가장 빠듯**: {worst[0]}요일 {TIMESLOT_LABEL[worst[1]]} — {prof.loc[worst]:.1f}")
+b1.success(f"**가장 여유**: {best[0]}요일 {TIMESLOT_LABEL[best[1]]} — {pick.loc[best]:.1f}")
+b2.error(f"**가장 빠듯**: {worst[0]}요일 {TIMESLOT_LABEL[worst[1]]} — {pick.loc[worst]:.1f}")
+if RECOMMEND_EXCLUDE:
+    excluded = ", ".join(TIMESLOT_LABEL[t] for t in RECOMMEND_EXCLUDE)
+    st.caption(f"위 표에는 **{excluded}** 도 함께 나오지만, 추천에서는 뺐습니다 — "
+               "이 시간대는 주차가 비는 게 아니라 **사람이 없어서** 비는 것이라 "
+               "나들이 시점으로는 쓸 수 없습니다.")
 
-diff = (prof.loc[best] / prof.loc[worst] - 1) * 100
+diff = (pick.loc[best] / pick.loc[worst] - 1) * 100
 suffix = " (자치구 내 행정동 평균)" if dong == "전체" else ""
 st.info(f"**{label}**{suffix}은 가장 빠듯한 때보다 가장 여유로운 때가 **{diff:.0f}% 넉넉**합니다. "
         f"같은 주차장인데 사람 수가 달라서 생기는 차이입니다.", icon="💡")

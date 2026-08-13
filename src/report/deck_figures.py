@@ -32,6 +32,7 @@ from scipy import stats
 from src.utils.logger import get_logger
 from src.utils.plotstyle import use_korean_font
 from src.utils.settings import DATA_PROCESSED, ROOT_DIR
+from src.utils.timeslot import recommend_timeslots
 
 logger = get_logger(__name__)
 
@@ -174,7 +175,11 @@ def fig_cluster_pattern() -> None:
     d = panel.merge(cl[["admi_cd", "유형"]], on="admi_cd", how="inner")
     d = d[d.has_parking]
 
-    order = ["오전", "점심", "오후", "저녁", "밤"]
+    # 추천 대상 시간대만 그린다. 아침(06-10)은 패널에 있지만 여기서 빠진다 —
+    # 사람이 없어서 빈 시간이라 '유형별로 언제가 여유로운가'의 답이 될 수 없다.
+    # 예전에는 5개를 그대로 박아 뒀는데, config에서 구간을 바꾸면 이 그림만
+    # 조용히 어긋나므로 아래 눈금·구분선까지 모두 이 목록에서 끌어 쓴다.
+    order = recommend_timeslots()
     fig, ax = plt.subplots(figsize=FIGSIZE)
     styles = {"상권형": (ALERT, "-"), "주거형": (ACCENT, "-")}
     for t, sub in d.groupby("유형"):
@@ -189,16 +194,18 @@ def fig_cluster_pattern() -> None:
                 label=f"{t} ({(cl.유형 == t).sum()}개 동)")
 
     ax.axhline(100, color=MUTED, ls=":", lw=1)
-    ax.set_xticks([i * 5 + 2 for i in range(7)], ["월", "화", "수", "목", "금", "토", "일"])
+    n = len(order)   # 요일 한 칸에 들어가는 시간대 수
+    ax.set_xticks([i * n + n // 2 for i in range(7)], ["월", "화", "수", "목", "금", "토", "일"])
     for i in range(1, 7):
-        ax.axvline(i * 5 - 0.5, color="#dddcd6", lw=1)
+        ax.axvline(i * n - 0.5, color="#dddcd6", lw=1)
     # 주말 구간 표시. 예전에는 배경을 회색으로 칠했는데, 투명 배경으로 저장하면
     # 거기만 불투명한 사각형으로 남는다. 경계선과 라벨로 대신한다
-    ax.axvline(24.5, color=MUTED, lw=1.6)
-    ax.text((24.5 + len(prof) - 0.5) / 2, ax.get_ylim()[1] * 0.995, "주말",
+    weekend_x = 5 * n - 0.5   # 평일 5일이 끝나는 지점
+    ax.axvline(weekend_x, color=MUTED, lw=1.6)
+    ax.text((weekend_x + len(prof) - 0.5) / 2, ax.get_ylim()[1] * 0.995, "주말",
             ha="center", va="top", fontsize=12, color=MUTED, fontweight="bold")
     ax.set_ylabel("주차 여유 지수\n(유형 내 평균 = 100)")
-    ax.set_xlabel("요일 안에서는 오전 → 점심 → 오후 → 저녁 → 밤 순", fontsize=11, color=MUTED)
+    ax.set_xlabel("요일 안에서는 " + " → ".join(order) + " 순", fontsize=11, color=MUTED)
     ax.legend(fontsize=11, loc="upper left", frameon=False)
     ax.grid(axis="y", alpha=0.25)
     save(fig, "03_cluster_pattern")

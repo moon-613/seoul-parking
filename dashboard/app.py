@@ -29,6 +29,7 @@ nav = st.navigation({
         st.Page("views/types.py", title="동네 유형", icon="🧩"),
     ],
     "주차 정책": [
+        st.Page("views/map_policy.py", title="공급 진단 지도", icon="🗺️"),
         st.Page("views/expansion.py", title="확충 우선순위", icon="🏗️"),
     ],
 })
