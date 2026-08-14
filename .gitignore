@@ -40,8 +40,9 @@ reports/figures/*
 #   예시 덱·발표가이드            : 외부에서 받은 참고자료
 submission/02_발표자료/*
 !submission/02_발표자료/.gitkeep
-.\seoul-parking\docs\발표_화면해설.md
-.\seoul-parking\docs\발표_대본.md
+
+## 제출용 소스 zip — src/report/make_zip.py 로 재생성해 드라이브에 올린다
+submission/seoul-parking.zip
 
 ## OS / editor
 .DS_Store

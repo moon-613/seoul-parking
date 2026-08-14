@@ -39,12 +39,12 @@ import pandas as pd
 from pptx import Presentation
 from scipy import stats
 
+from src.report.build_deck import OUT_PATH as DECK_PATH
 from src.utils.logger import get_logger
-from src.utils.settings import DATA_PROCESSED, ROOT_DIR
+from src.utils.settings import DATA_PROCESSED
 
 logger = get_logger(__name__)
 
-DECK_PATH = ROOT_DIR / "submission" / "02_발표자료" / "분석보고서_문지영.pptx"
 MIN_NONAPT = 100          # real_demand.py 와 같은 값
 BASE = ("토", "오후")      # config 의 regression_baseline
 

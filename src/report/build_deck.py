@@ -1,4 +1,4 @@
-"""발표자료(=보고서) PPT 생성 -> submission/02_발표자료/분석보고서_문지영.pptx
+"""발표자료(=보고서) PPT 생성 -> submission/02_발표자료/1팀_문지영.pptx
 
 장수를 정한 근거 (submission/02_발표자료/발표가이드.png)
 --------------------------------------------------
@@ -40,7 +40,9 @@ from src.utils.settings import ROOT_DIR
 logger = get_logger(__name__)
 
 DECK_FIG = ROOT_DIR / "reports" / "figures" / "deck"
-OUT_PATH = ROOT_DIR / "submission" / "02_발표자료" / "분석보고서_문지영.pptx"
+# 제출 파일명이 곧 생성 파일명이다. 예전에는 여기서 `분석보고서_문지영.pptx` 로 만든 뒤
+# 손으로 제출용 이름으로 바꿔 썼는데, 그러면 verify_deck 이 원본 이름을 찾다 실패한다.
+OUT_PATH = ROOT_DIR / "submission" / "02_발표자료" / "1팀_문지영.pptx"
 
 # 예시 덱과 같은 16:9
 SLIDE_W, SLIDE_H = Inches(13.333), Inches(7.5)
